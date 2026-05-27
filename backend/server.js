@@ -5,32 +5,55 @@ const fs = require("fs");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware básico
 app.use(express.json());
 
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ ok: true, port: PORT });
-});
+// LOG DE BOOT
+console.log(`\n🚀 INICIANDO SERVIDOR`);
+console.log(`📁 __dirname: ${__dirname}`);
+console.log(`📁 cwd: ${process.cwd()}`);
 
-// Servir frontend
+// Verificar frontend
 const distPath = path.join(__dirname, "../frontend/dist");
-const hasFiles = fs.existsSync(distPath);
+console.log(`\n📁 Procurando dist em: ${distPath}`);
+console.log(`📁 Existe? ${fs.existsSync(distPath)}`);
 
-console.log(`📁 Frontend em: ${distPath}`);
-console.log(`📁 Existe? ${hasFiles}`);
-
-if (hasFiles) {
-  // Servir arquivos estáticos
-  app.use(express.static(distPath));
-  
-  // Catchall - servir index.html (USANDO REGEX!)
-  app.get(/^\/(?!api\/)/, (req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
-  });
+if (fs.existsSync(distPath)) {
+  const files = fs.readdirSync(distPath);
+  console.log(`📁 Arquivos: ${files.join(", ")}`);
+  const indexPath = path.join(distPath, "index.html");
+  console.log(`📁 index.html existe? ${fs.existsSync(indexPath)}`);
 }
 
-// Start
-const server = app.listen(PORT, () => {
-  console.log(`\n✅ Servidor simples rodando na porta ${PORT}\n`);
+// ROTA: /health
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
+});
+
+// ROTA: /api/*
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "API endpoint não encontrado" });
+});
+
+// SERVIR FRONTEND ESTÁTICO
+app.use(express.static(distPath, { 
+  maxAge: "1d",
+  etag: false 
+}));
+
+// CATCHALL: qualquer coisa que chegar aqui, serve index.html
+app.use((req, res) => {
+  const indexPath = path.join(distPath, "index.html");
+  console.log(`[CATCHALL] ${req.method} ${req.path} -> ${indexPath}`);
+  
+  if (fs.existsSync(indexPath)) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).json({ error: "index.html não encontrado", path: indexPath });
+  }
+});
+
+// START
+app.listen(PORT, () => {
+  console.log(`\n✅ SERVIDOR RODANDO NA PORTA ${PORT}\n`);
 });
