@@ -37,6 +37,12 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "5mb" }));
 
+// ── Request Logging ───────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  console.log(`[REQ] ${req.method} ${req.path}`);
+  next();
+});
+
 // ── WebSocket Connection ──────────────────────────────────────────────────────
 io.on("connection", (socket) => {
   console.log(`📱 Cliente conectado: ${socket.id}`);
@@ -195,14 +201,16 @@ if (hasFrontend) {
   app.use((req, res, next) => {
     // Se for API, pular
     if (req.path.startsWith('/api')) {
+      console.log(`[SPA] Pulando API: ${req.path}`);
       return next();
     }
     // Se for arquivo estático que existe, express.static já serviu acima
     // Se chegou aqui, é rota SPA - servir index.html
+    console.log(`[SPA] Servindo index.html para: ${req.path}`);
     res.sendFile(path.join(distPath, "index.html"), (err) => {
       if (err) {
-        console.error("Erro ao servir index.html:", err);
-        res.status(404).json({ error: "Arquivo não encontrado" });
+        console.error("[SPA] Erro ao servir index.html:", err.message);
+        res.status(404).json({ error: "Arquivo não encontrado", path: req.path });
       }
     });
   });
