@@ -1,22 +1,33 @@
 /**
- * MultiAtend – Backend Proxy
+ * MultiAtend – Backend com WebSocket + Webhook
  * ─────────────────────────────────────────────────────────────────────────────
  * Rotas:
- *   POST /api/classify          → proxy para OpenAI (classifica mensagens)
- *   ALL  /api/uazapi/:path(*)   → proxy para Uazapi (resolve CORS)
+ *   POST /api/classify          → ChatGPT (classifica mensagens)
+ *   POST /api/webhook           → Uazapi (recebe mensagens em tempo real)
+ *   ALL  /api/uazapi/:path(*)   → proxy Uazapi
  *   GET  /api/health            → healthcheck
- *   GET  /                      → serve frontend buildado (frontend/dist)
+ *   GET  /                      → frontend estático
  */
 
 require("dotenv").config();
 const express = require("express");
-const cors    = require("cors");
-const fetch   = require("node-fetch");
-const path    = require("path");
-const fs      = require("fs");
+const cors = require("cors");
+const fetch = require("node-fetch");
+const path = require("path");
+const fs = require("fs");
+const http = require("http");
+const socketIo = require("socket.io");
 
-const app  = express();
-const PORT = process.env.PORT || 3001;
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.FRONTEND_ORIGIN || "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+const PORT = process.env.PORT || 3000;
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 app.use(cors({
@@ -26,47 +37,85 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "5mb" }));
 
+// ── WebSocket Connection ──────────────────────────────────────────────────────
+io.on("connection", (socket) => {
+  console.log(`📱 Cliente conectado: ${socket.id}`);
+  
+  socket.on("disconnect", () => {
+    console.log(`📱 Cliente desconectado: ${socket.id}`);
+  });
+});
+
 // ── Healthcheck ───────────────────────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, ts: new Date().toISOString() });
+  res.json({ ok: true, ts: new Date().toISOString(), clients: io.engine.clientsCount });
+});
+
+// ── Webhook Uazapi (recebe mensagens em tempo real) ──────────────────────────
+app.post("/api/webhook", async (req, res) => {
+  try {
+    const { event, data } = req.body;
+    
+    console.log(`🔔 Webhook recebido: ${event}`);
+    
+    // Se for mensagem chegando
+    if (event === "messages" && data) {
+      const { phone, body, fromMe } = data;
+      
+      // Não processar mensagens que você mesmo enviou
+      if (fromMe) return res.json({ ok: true });
+      
+      // Pegar nome do contato (simplificado)
+      const contact = data.senderName || data.contact || "Desconhecido";
+      
+      // Classificar com IA
+      const classified = await classifyMsg(contact, body);
+      
+      // Enviar pra todos os clientes conectados via WebSocket
+      io.emit("new_message", {
+        phone,
+        contact,
+        message: body,
+        lane: classified.lane,
+        reason: classified.reason,
+        time: new Date().toLocaleTimeString("pt-BR", {hour:"2-digit", minute:"2-digit"}),
+      });
+      
+      console.log(`✅ Mensagem processada: ${contact} → ${classified.lane}`);
+    }
+    
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Webhook error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Proxy OpenAI → classificação de mensagens ─────────────────────────────────
-app.post("/api/classify", async (req, res) => {
+async function classifyMsg(contact, message) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey || apiKey.includes("xxxx")) {
-    return res.status(500).json({ error: "OPENAI_API_KEY não configurada no backend/.env" });
-  }
-
-  const { contact, message } = req.body;
-  if (!contact || !message) {
-    return res.status(400).json({ error: "Campos 'contact' e 'message' obrigatórios." });
+    return { lane: "espera", reason: "API não configurada" };
   }
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Content-Type":  "application/json",
+        "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",   // barato e rápido — troque por gpt-4o se quiser mais precisão
+        model: "gpt-4o-mini",
         max_tokens: 80,
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
-            content: `Classifique mensagens de WhatsApp para atendimento ao cliente.
-Retorne SOMENTE JSON válido (sem markdown):
-{"lane":"urgente"|"atendimento"|"espera"|"concluido","reason":"motivo curto"}
-
-Regras:
-- urgente:      reclamações graves, CAPS agressivo, DEFEITO/REEMBOLSO/NÃO CHEGOU/CANCELAR
-- atendimento:  dúvidas, pedidos, perguntas sobre produto/preço/prazo/plano
-- espera:       saudações, primeiro contato, mensagens genéricas
-- concluido:    agradecimentos, elogios, confirmações positivas`,
+            content: `Classifique mensagens de WhatsApp.
+Retorne JSON: {"lane":"urgente"|"atendimento"|"espera"|"concluido","reason":"motivo"}
+Regras: urgente=reclamação/CAPS/DEFEITO, atendimento=dúvida, espera=saudação, concluido=elogio`,
           },
           {
             role: "user",
@@ -77,27 +126,25 @@ Regras:
     });
 
     const data = await response.json();
-
-    if (!response.ok) {
-      console.error("OpenAI error:", data);
-      return res.status(response.status).json({ error: data.error?.message || "Erro OpenAI" });
-    }
-
-    const text  = data.choices?.[0]?.message?.content || '{"lane":"espera","reason":""}';
+    const text = data.choices?.[0]?.message?.content || '{"lane":"espera","reason":""}';
     const clean = text.replace(/```json|```/g, "").trim();
-    try {
-      res.json(JSON.parse(clean));
-    } catch {
-      res.json({ lane: "espera", reason: "resposta inválida" });
-    }
-
+    return JSON.parse(clean);
   } catch (err) {
     console.error("Classify error:", err.message);
-    res.status(500).json({ lane: "espera", reason: "erro interno" });
+    return { lane: "espera", reason: "erro" };
   }
+}
+
+app.post("/api/classify", async (req, res) => {
+  const { contact, message } = req.body;
+  if (!contact || !message) {
+    return res.status(400).json({ error: "Campos 'contact' e 'message' obrigatórios." });
+  }
+  const classified = await classifyMsg(contact, message);
+  res.json(classified);
 });
 
-// ── Proxy Uazapi → resolve CORS do navegador ──────────────────────────────────
+// ── Proxy Uazapi → resolve CORS ───────────────────────────────────────────────
 app.all("/api/uazapi/*", async (req, res) => {
   const base = req.query.base;
   if (!base) return res.status(400).json({ error: "Query param 'base' obrigatório." });
@@ -109,11 +156,11 @@ app.all("/api/uazapi/*", async (req, res) => {
 
   try {
     const fetchOpts = {
-      method:  req.method,
+      method: req.method,
       headers: {
         "Content-Type": "application/json",
-        token:          req.headers["token"]      || "",
-        sessionkey:     req.headers["sessionkey"] || "",
+        token: req.headers["token"] || "",
+        sessionkey: req.headers["sessionkey"] || "",
       },
     };
     if (["POST","PUT","PATCH"].includes(req.method) && req.body) {
@@ -121,10 +168,9 @@ app.all("/api/uazapi/*", async (req, res) => {
     }
 
     const upstream = await fetch(url, fetchOpts);
-    const text     = await upstream.text();
+    const text = await upstream.text();
     res.status(upstream.status);
     try { res.json(JSON.parse(text)); } catch { res.send(text); }
-
   } catch (err) {
     console.error("Uazapi proxy error:", err.message);
     res.status(502).json({ error: "Erro ao conectar na Uazapi: " + err.message });
@@ -137,21 +183,19 @@ const hasFrontend = fs.existsSync(distPath);
 
 if (hasFrontend) {
   app.use(express.static(distPath));
-  // SPA fallback: tudo que não for /api/* devolve o index.html
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(distPath, "index.html"));
   });
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`\n✅  MultiAtend rodando em http://localhost:${PORT}`);
-  console.log(`   POST /api/classify   → ChatGPT (OpenAI)`);
-  console.log(`   ALL  /api/uazapi/*   → proxy Uazapi`);
+  console.log(`   📡 WebSocket ativo (socket.io)`);
+  console.log(`   🔔 Webhook: POST /api/webhook`);
+  console.log(`   💬 Chat: POST /api/classify`);
+  console.log(`   🔗 Proxy: ALL /api/uazapi/*`);
   if (hasFrontend) {
-    console.log(`   GET  /               → frontend estático\n`);
-  } else {
-    console.log(`   ⚠️   frontend/dist não encontrado.`);
-    console.log(`       Rode: cd frontend && npm run build\n`);
+    console.log(`   🌐 Frontend estático: GET /\n`);
   }
 });
