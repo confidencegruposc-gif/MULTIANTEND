@@ -1,0 +1,50 @@
+==========================================
+  MULTIATEND - Como usar
+==========================================
+
+WINDOWS:
+  -> Clique duas vezes em: INICIAR.bat
+
+MAC / LINUX:
+  -> Clique duas vezes em: INICIAR.command
+
+PARAR O SERVIDOR:
+  -> Windows: clique em PARAR.bat
+     ou feche a janela preta
+
+==========================================
+  ONDE PEGAR A CHAVE DA OPENAI
+==========================================
+
+1. Acesse: https://platform.openai.com/api-keys
+2. Faca login ou crie uma conta
+3. Clique em "Create new secret key"
+4. Copie a chave (comeca com sk-...)
+5. Cole no arquivo backend/.env:
+
+   OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx
+
+==========================================
+  CUSTO
+==========================================
+
+O modelo usado e o gpt-4o-mini.
+Classificar centenas de mensagens
+custa menos de US$ 0,01.
+Contas novas ganham credito gratuito.
+
+==========================================
+  APOS INICIAR
+==========================================
+
+O app abre sozinho em:
+  http://localhost:3001
+
+==========================================
+  PROBLEMA?
+==========================================
+
+Windows: rode DIAGNOSTICO.bat
+Mac/Linux: veja o erro no terminal
+
+==========================================
