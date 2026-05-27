@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { io } from "socket.io-client";
 
 // ─── CONTAS ──────────────────────────────────────────────────────────────────
 const INITIAL_ACCOUNTS = [
@@ -503,6 +504,67 @@ export default function App(){
     }, 60*60*1000);
     return()=>clearInterval(t);
   },[]);
+
+  // ─── WebSocket para mensagens em tempo real ─────────────────────────────────
+  useEffect(()=>{
+    const socket = io(window.location.origin, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5
+    });
+
+    socket.on('connect', () => {
+      console.log('🔌 WebSocket conectado');
+      toast_('🔌 Conectado ao servidor em tempo real');
+    });
+
+    socket.on('new_message', (msg) => {
+      console.log('📨 Nova mensagem via webhook:', msg);
+      // Procura se já existe conversa com esse contato
+      setConvs(p => {
+        const existing = p.find(c => c.phone === msg.phone);
+        if (existing) {
+          // Atualiza conversa existente
+          return p.map(c => c.phone === msg.phone ? {
+            ...c,
+            lastMsg: msg.message,
+            time: msg.time,
+            unread: c.unread + 1,
+            lane: msg.lane,
+            aiReason: msg.reason,
+            messages: [...(c.messages || []), {
+              from: 'contact',
+              text: msg.message,
+              time: msg.time
+            }]
+          } : c);
+        } else {
+          // Cria nova conversa
+          return [{
+            id: ++uid,
+            accountId: 1, // Default pra primeira conta
+            contact: msg.contact,
+            phone: msg.phone,
+            lastMsg: msg.message,
+            time: msg.time,
+            unread: 1,
+            lane: msg.lane,
+            aiReason: msg.reason,
+            messages: [{ from: 'contact', text: msg.message, time: msg.time }]
+          }, ...p];
+        }
+      });
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ WebSocket desconectado');
+      toast_('⚠️ Conexão perdida com servidor');
+    });
+
+    return () => socket.disconnect();
+  }, []);
 
   async function addConv(accountId,contact,phone,message){
     const id=++uid;
