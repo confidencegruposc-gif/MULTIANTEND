@@ -24,8 +24,8 @@ if (hasFiles) {
   // Servir arquivos estáticos
   app.use(express.static(distPath));
   
-  // Catchall - servir index.html
-  app.get("*", (req, res) => {
+  // Catchall - servir index.html (USANDO REGEX!)
+  app.get(/^\/(?!api\/)/, (req, res) => {
     res.sendFile(path.join(distPath, "index.html"));
   });
 }
