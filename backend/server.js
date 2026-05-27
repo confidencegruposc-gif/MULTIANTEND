@@ -188,13 +188,21 @@ if (hasFrontend) {
   const files = fs.readdirSync(distPath);
   console.log(`📁 Arquivos em dist/: ${files.join(", ")}`);
   
+  // Servir arquivos estáticos primeiro
   app.use(express.static(distPath));
-  app.get(/^(?!\/api).*/, (_req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
+  
+  // Catchall para SPA (qualquer coisa que não é /api e não existe, redireciona pra index.html)
+  app.use(/^(?!\/api)/, (req, res) => {
+    res.sendFile(path.join(distPath, "index.html"), (err) => {
+      if (err) {
+        res.status(404).json({ error: "Arquivo não encontrado" });
+      }
+    });
   });
 } else {
   console.warn(`⚠️  Frontend não encontrado em ${distPath}`);
-  app.get(/^(?!\/api).*/, (_req, res) => {
+  // Rota de fallback
+  app.use((_req, res) => {
     res.status(404).json({ error: "Frontend não buildado", path: distPath });
   });
 }
