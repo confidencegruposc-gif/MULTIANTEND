@@ -188,23 +188,26 @@ if (hasFrontend) {
   const files = fs.readdirSync(distPath);
   console.log(`📁 Arquivos em dist/: ${files.join(", ")}`);
   
-  // Servir arquivos estáticos primeiro
-  app.use(express.static(distPath));
+  // Servir arquivos estáticos PRIMEIRO
+  app.use(express.static(distPath, { maxAge: "1d" }));
   
-  // Catchall para SPA (qualquer coisa que não é /api e não existe, redireciona pra index.html)
-  app.use(/^(?!\/api)/, (req, res) => {
+  // Middleware: qualquer rota que não comece com /api, servir index.html (SPA routing)
+  app.use((req, res, next) => {
+    // Se for API, pular
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    // Se for arquivo estático que existe, express.static já serviu acima
+    // Se chegou aqui, é rota SPA - servir index.html
     res.sendFile(path.join(distPath, "index.html"), (err) => {
       if (err) {
+        console.error("Erro ao servir index.html:", err);
         res.status(404).json({ error: "Arquivo não encontrado" });
       }
     });
   });
 } else {
   console.warn(`⚠️  Frontend não encontrado em ${distPath}`);
-  // Rota de fallback
-  app.use((_req, res) => {
-    res.status(404).json({ error: "Frontend não buildado", path: distPath });
-  });
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
