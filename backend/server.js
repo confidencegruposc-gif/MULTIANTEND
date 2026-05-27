@@ -181,10 +181,21 @@ app.all("/api/uazapi/*", async (req, res) => {
 const distPath = path.join(__dirname, "../frontend/dist");
 const hasFrontend = fs.existsSync(distPath);
 
+console.log(`📁 Procurando frontend em: ${distPath}`);
+console.log(`📁 Frontend existe? ${hasFrontend}`);
+
 if (hasFrontend) {
+  const files = fs.readdirSync(distPath);
+  console.log(`📁 Arquivos em dist/: ${files.join(", ")}`);
+  
   app.use(express.static(distPath));
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(distPath, "index.html"));
+  });
+} else {
+  console.warn(`⚠️  Frontend não encontrado em ${distPath}`);
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.status(404).json({ error: "Frontend não buildado", path: distPath });
   });
 }
 
