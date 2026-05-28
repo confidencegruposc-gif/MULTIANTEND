@@ -906,11 +906,19 @@ function GroupsModal({ accounts, onClose, toast_, groupsFromConvs = [], onOpenGr
   const id = g.id || g.phone;
   const acc = accounts.find((a) => a.id === g.accountId) || accounts[0];
               return (
-                <div key={id} style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "12px",
-                  borderBottom: "1px solid #f0f0f0",
-                  background: g.enabled ? "#f1f8e9" : "white",
-                }}>
+              <div
+  key={id}
+  onClick={() => onOpenGroup?.(g)}
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "12px",
+    borderBottom: "1px solid #f0f0f0",
+    background: g.enabled ? "#f1f8e9" : "white",
+    cursor: "pointer",
+  }}
+>
                   <div style={{
                     width: 40, height: 40, borderRadius: "50%",
                     background: acc.color, color: "white",
