@@ -154,9 +154,14 @@ app.post("/api/webhook", async (req, res) => {
 
     if (isMessage) {
       const rawId = data.chatid || data.phone || data.from || data.sender || data.number || "";
-      const text = data.body || data.text || data.message || data.content || data.conversation || "";
+
+      // O conteúdo real vem dentro de data.content (estrutura Uazapi)
+      const content = data.content || {};
+      const text = content.text || content.caption || data.body || data.text || data.message || data.conversation || "";
+
       const fromMe = data.fromMe || data.fromme || data.isFromMe || false;
-      const contact = data.senderName || data.pushName || data.notifyName || data.name || rawId;
+      // Nome: groupName para grupos, senderName/pushName para contatos
+      const contact = data.groupName || data.senderName || data.pushName || data.notifyName || data.name || data.chatName || rawId;
 
       // Identificar conta - tenta vários campos
       const token = body.token || body.Token || data.token || "";
