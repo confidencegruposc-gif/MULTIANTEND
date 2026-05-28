@@ -1,4 +1,3 @@
-```js
 // backend/webhooks/uazapiWebhook.js
 // Webhook universal da UAZAPI
 
@@ -254,4 +253,3 @@ io.emit("new_message", {
 }
 
 module.exports = { registrarWebhookUazapi };
-```
