@@ -839,7 +839,7 @@ function Field({ label, value, onChange, placeholder }) {
 }
 
 // ─── MODAL DE GRUPOS ─────────────────────────────────────────────────────────
-function GroupsModal({ accounts, onClose, toast_ }) {
+function GroupsModal({ accounts, onClose, toast_, groupsFromConvs = [], onOpenGroup }) {
   const [groups, setGroups] = useState({});
   const [loading, setLoading] = useState(true);
 
@@ -864,9 +864,19 @@ function GroupsModal({ accounts, onClose, toast_ }) {
     }
   }
 
-  const groupList = Object.entries(groups).sort((a, b) =>
-    (b[1].lastSeen || "").localeCompare(a[1].lastSeen || "")
-  );
+ const groupList = groupsFromConvs.length
+  ? groupsFromConvs
+  : Object.entries(groups).map(([id, g]) => ({
+      id,
+      phone: g.phone || id,
+      contact: g.name || id,
+      accountId: g.accountId,
+      lastMsg: "Grupo detectado",
+      time: g.lastSeen || "",
+      isGroup: true,
+      area: "groups",
+      messages: [],
+    }));
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
