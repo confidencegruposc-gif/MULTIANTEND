@@ -128,7 +128,7 @@ function registrarWebhookUazapi(app, io, deps = {}) {
         data.isFromMe ||
         data.key?.fromMe
       );
-      }
+    
 
       const contact = pegarPrimeiroValor(
         data.groupName,
