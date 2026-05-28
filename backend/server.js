@@ -251,17 +251,30 @@ app.post("/api/history", async (req, res) => {
   const token = ACCOUNT_TOKENS[accountId];
   if (!token) return res.status(400).json({ error: "Conta inválida" });
 
-  try {
-    const r = await fetch(`${UAZAPI_BASE}/message/find`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", token },
-      body: JSON.stringify({ chatid: phone, limit: 50 }),
-    });
-    const data = await r.json();
-    res.json({ ok: true, messages: Array.isArray(data) ? data : (data.messages || []) });
-  } catch (err) {
-    res.status(502).json({ error: err.message });
+  // Tenta diferentes endpoints da Uazapi pra buscar histórico
+  const endpoints = [
+    { url: `${UAZAPI_BASE}/message/find`, body: { chatid: phone, limit: 100 } },
+    { url: `${UAZAPI_BASE}/chat/messages`, body: { chatid: phone, limit: 100 } },
+    { url: `${UAZAPI_BASE}/message/list`, body: { chatid: phone, count: 100 } },
+  ];
+
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", token },
+        body: JSON.stringify(ep.body),
+      });
+      if (!r.ok) continue;
+      const data = await r.json();
+      const msgs = Array.isArray(data) ? data : (data.messages || data.data || []);
+      if (msgs.length > 0) {
+        return res.json({ ok: true, messages: msgs });
+      }
+    } catch {}
   }
+
+  res.json({ ok: true, messages: [] });
 });
 
 // ── TRANSCREVER ÁUDIO (Whisper) ───────────────────────────────────────────────
