@@ -1,772 +1,401 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 
 // ─── CONTAS ──────────────────────────────────────────────────────────────────
 const INITIAL_ACCOUNTS = [
-  { id:1, name:"confir MEI", type:"uazapi", color:"#7c3aed", dot:"#a78bfa", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
-  { id:2, name:"Confidence", type:"uazapi", color:"#0ea5e9", dot:"#38bdf8", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
-  { id:3, name:"Pessoal",    type:"uazapi", color:"#f59e0b", dot:"#fbbf24", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
-  { id:4, name:"Pet Family", type:"uazapi", color:"#ec4899", dot:"#f472b6", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
+  { id:1, name:"confir MEI", color:"#7c3aed", colorLight:"#faf5ff", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
+  { id:2, name:"Confidence Contabilidade", color:"#0ea5e9", colorLight:"#eff6ff", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
+  { id:3, name:"Pessoal Odilei", color:"#f59e0b", colorLight:"#fffbeb", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
+  { id:4, name:"Pet Family", color:"#ec4899", colorLight:"#fdf2f8", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
 ];
 
 const LANES = [
-  { id:"espera",      label:"Espera",         icon:"⏳", color:"#64748b", bg:"#f1f5f9", dark:"#1e293b" },
-  { id:"atendimento", label:"Em Atendimento", icon:"💬", color:"#0ea5e9", bg:"#e0f2fe", dark:"#082f49" },
-  { id:"urgente",     label:"Urgente",        icon:"🔴", color:"#ef4444", bg:"#fee2e2", dark:"#450a0a" },
-  { id:"concluido",   label:"Concluído",      icon:"✅", color:"#10b981", bg:"#d1fae5", dark:"#022c22" },
+  { id:"urgente", label:"Urgente", icon:"🔴", color:"#dc2626", bg:"#fee2e2", textColor:"#991b1b" },
+  { id:"atendimento", label:"Atendimento", icon:"🟠", color:"#ea580c", bg:"#ffedd5", textColor:"#9a3412" },
+  { id:"espera", label:"Espera", icon:"🟡", color:"#ca8a04", bg:"#fef3c7", textColor:"#854d0e" },
+  { id:"concluido", label:"Concluído", icon:"🟢", color:"#16a34a", bg:"#dcfce7", textColor:"#166534" },
 ];
 
-const DEMO_NAMES = ["Ana Costa","Pedro Lima","Juliana Torres","Carlos Ramos","Fernanda Melo","Diego Alves","Beatriz Nunes","Rafael Souza"];
-const DEMO_MSGS  = [
-  "Olá! Preciso de ajuda URGENTE com meu pedido!",
-  "Qual o preço do produto premium?",
-  "Boa tarde! Quando vocês abrem amanhã?",
-  "MEU PRODUTO CHEGOU COM DEFEITO!!!",
-  "Tenho interesse nos planos anuais.",
-  "Muito obrigado pelo atendimento! 😊",
-  "Não recebi meu reembolso, já faz 3 semanas!!!",
-  "Qual o prazo de entrega para SP?",
-];
+let uid = 1000;
+const timeNow = () => new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const getInitials = (n) => !n ? "??" : n.split(" ").map(x => x[0]).slice(0,2).join("").toUpperCase();
 
-function nowT(){ return new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}); }
-function nowDT(){ return new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
-let uid = 2000;
-
-// ─── UAZAPI via backend proxy ─────────────────────────────────────────────────
-// O Vite redireciona /api/* para http://localhost:3001
-async function uazGet(cfg, path){
-  const qs = `?base=${encodeURIComponent(cfg.baseUrl)}`;
-  const r = await fetch(`/api/uazapi${path}${qs}`, {
-    headers:{ token: cfg.token, sessionkey: cfg.sessionKey }
+export default function App() {
+  const [accounts, setAccounts] = useState(() => {
+    const s = localStorage.getItem("multiatend_accounts");
+    return s ? JSON.parse(s) : INITIAL_ACCOUNTS;
   });
-  if(!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-}
-async function uazPost(cfg, path, body){
-  const qs = `?base=${encodeURIComponent(cfg.baseUrl)}`;
-  const r = await fetch(`/api/uazapi${path}${qs}`, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json", token:cfg.token, sessionkey:cfg.sessionKey },
-    body: JSON.stringify(body),
+  const [convs, setConvs] = useState(() => {
+    const s = localStorage.getItem("multiatend_convs");
+    return s ? JSON.parse(s) : [];
   });
-  if(!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-}
+  const [view, setView] = useState("lista");
+  const [filterAccount, setFilterAccount] = useState("todas");
+  const [filterLane, setFilterLane] = useState("todas");
+  const [openChat, setOpenChat] = useState(null);
+  const [setupAcc, setSetupAcc] = useState(null);
+  const [toast, setToast] = useState("");
+  const [collapsed, setCollapsed] = useState({});
 
-async function fetchQR(cfg){
-  try{ const d=await uazGet(cfg,"/qrcode"); return d.qrcode||d.base64||d.data||null; }catch{ return null; }
-}
-async function fetchStatus(cfg){
-  try{ const d=await uazGet(cfg,"/status"); return d.status||d.result||"disconnected"; }catch{ return "error"; }
-}
-async function fetchChats(cfg){
-  try{ const d=await uazGet(cfg,"/getContacts"); return Array.isArray(d)?d:(d.contacts||d.chats||[]); }catch{ return []; }
-}
-async function fetchHistory(cfg, phone, limit=50){
-  try{
-    const d = await uazGet(cfg,`/getMessages?phone=${encodeURIComponent(phone)}&limit=${limit}`);
-    const raw = Array.isArray(d)?d:(d.messages||d.data||[]);
-    return raw.map(m=>({
-      from:  m.fromMe||m.from_me?"me":"contact",
-      text:  m.body||m.text||m.content||"…",
-      time:  typeof m.timestamp==="number"
-        ? new Date(m.timestamp*1000).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})
-        : m.datetime||nowT(),
-    }));
-  }catch{ return null; }
-}
-async function sendTextApi(cfg, phone, text){
-  return uazPost(cfg,"/sendText",{ session:cfg.session, sessionkey:cfg.sessionKey, token:cfg.token, number:phone, text });
-}
+  useEffect(() => localStorage.setItem("multiatend_accounts", JSON.stringify(accounts)), [accounts]);
+  useEffect(() => localStorage.setItem("multiatend_convs", JSON.stringify(convs)), [convs]);
 
-// ─── IA via backend proxy ─────────────────────────────────────────────────────
-async function classifyMsg(contact, message){
-  try{
-    const r = await fetch("/api/classify",{
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ contact, message }),
-    });
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  }catch{ return { lane:"espera", reason:"erro" }; }
-}
+  const toast_ = (m) => { setToast(m); setTimeout(() => setToast(""), 3000); };
 
-// ─── BACKUP via localStorage ──────────────────────────────────────────────────
-const BK_META = "multiatend:backups";
-const BK_PFX  = "multiatend:bk:";
-
-function saveBackup(convs, accounts, label="auto"){
-  try{
-    let meta = [];
-    try{ meta = JSON.parse(localStorage.getItem(BK_META)||"[]"); }catch{}
-    const id    = Date.now();
-    const entry = { id, label, ts: nowDT(), count: convs.length };
-    const data  = { convs, accounts: accounts.map(a=>({...a,token:"[oculto]"})) };
-    localStorage.setItem(BK_PFX+id, JSON.stringify(data));
-    meta = [entry,...meta].slice(0,10);
-    localStorage.setItem(BK_META, JSON.stringify(meta));
-    return { ok:true, entry };
-  }catch(e){ return { ok:false, error:e.message }; }
-}
-function loadBackupMeta(){
-  try{ return JSON.parse(localStorage.getItem(BK_META)||"[]"); }catch{ return []; }
-}
-function loadBackupData(id){
-  try{ return JSON.parse(localStorage.getItem(BK_PFX+id)||"null"); }catch{ return null; }
-}
-function deleteBackup(id){
-  localStorage.removeItem(BK_PFX+id);
-  const meta = loadBackupMeta().filter(m=>m.id!==id);
-  localStorage.setItem(BK_META,JSON.stringify(meta));
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// MODAIS
-// ════════════════════════════════════════════════════════════════════════════
-function Overlay({ children, onClose }){
-  return(
-    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,.65)",
-      zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center" }}>
-      {children}
-    </div>
-  );
-}
-
-function SetupUazapi({ acc, onSave, onClose }){
-  const [f,setF]=useState({...acc});
-  const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  return(
-    <Overlay onClose={onClose}>
-      <div style={MC(390)} onClick={e=>e.stopPropagation()}>
-        <MH color={acc.color} title={`⚙️ ${acc.name} — Uazapi`} onClose={onClose}/>
-        <div style={MP}>
-          <FI label="Nome"        value={f.name}       onChange={v=>s("name",v)}/>
-          <FI label="URL base da Uazapi" value={f.baseUrl} onChange={v=>s("baseUrl",v)} ph="https://api.uazapi.com"/>
-          <FI label="Session"     value={f.session}    onChange={v=>s("session",v)}    ph="empresa1"/>
-          <FI label="Session Key" value={f.sessionKey} onChange={v=>s("sessionKey",v)} ph="empresa1"/>
-          <FI label="Token"       value={f.token}      onChange={v=>s("token",v)} type="password" ph="••••••"/>
-          <FI label="Gerenciador / Responsável" value={f.gerenciador} onChange={v=>s("gerenciador",v)} ph="João Silva (opcional)"/>
-          <Tgl label="Ativar conta" value={f.enabled}  onChange={v=>s("enabled",v)} color={acc.color}/>
-          <PB color={acc.color} onClick={()=>{onSave(f);onClose();}}>💾 Salvar</PB>
-        </div>
-      </div>
-    </Overlay>
-  );
-}
-
-
-function QrModal({ acc, onClose }){
-  const [qr,setQr]=useState(null);
-  const [st,setSt]=useState("Conectando…");
-  const t=useRef();
-  const poll=useCallback(async()=>{
-    const s=await fetchStatus(acc);
-    if(s==="connected"||String(s).includes("connect")){ setSt("✅ Conectado!"); clearInterval(t.current); return; }
-    const c=await fetchQR(acc);
-    if(c){ setQr(c); setSt("📱 Escaneie no WhatsApp"); } else setSt("⏳ Gerando QR…");
-  },[acc]);
-  useEffect(()=>{ poll(); t.current=setInterval(poll,8000); return()=>clearInterval(t.current); },[poll]);
-  return(
-    <Overlay onClose={onClose}>
-      <div style={MC(290)} onClick={e=>e.stopPropagation()}>
-        <MH color={acc.color} title={`📱 ${acc.name}`} onClose={onClose}/>
-        <div style={{ padding:20,textAlign:"center" }}>
-          <p style={{ color:"#94a3b8",fontSize:13,marginBottom:14 }}>{st}</p>
-          {qr ? <img src={qr.startsWith("data:")?qr:`data:image/png;base64,${qr}`}
-              alt="QR" style={{ width:190,height:190,borderRadius:8,border:"1px solid #334155" }}/>
-            : <div style={{ width:190,height:190,margin:"0 auto",background:"#0f172a",borderRadius:8,
-                display:"flex",alignItems:"center",justifyContent:"center" }}><Spin color={acc.color} size={32}/></div>
-          }
-          <p style={{ fontSize:10,color:"#475569",marginTop:10 }}>Atualiza a cada 8s</p>
-        </div>
-      </div>
-    </Overlay>
-  );
-}
-
-function ChatModal({ conv, acc, onClose, onMoveLane }){
-  const [input,setInput]=useState("");
-  const [msgs,setMsgs]=useState(conv.messages||[{ from:"contact",text:conv.lastMsg,time:conv.time }]);
-  const [busy,setBusy]=useState(false);
-  const [loadingH,setLoadingH]=useState(false);
-  const end=useRef();
-  useEffect(()=>{ end.current?.scrollIntoView({behavior:"smooth"}); },[msgs]);
-
-  async function loadHistory(){
-    setLoadingH(true);
-    const hist=await fetchHistory(acc,conv.phone,50);
-    if(hist&&hist.length>0){ setMsgs(hist); }
-    else{ setMsgs(m=>[{ from:"system",text:"⚠️ Histórico indisponível.",time:nowT() },...m]); }
-    setLoadingH(false);
-  }
-
-  async function send(){
-    if(!input.trim()||busy) return;
-    const text=input.trim(); setInput(""); setBusy(true);
-    setMsgs(m=>[...m,{ from:"me",text,time:nowT() }]);
-    try{
-      if(acc.type==="uazapi") await sendTextApi(acc,conv.phone,text);
-    }catch(e){ setMsgs(m=>[...m,{ from:"system",text:`❌ ${e.message}`,time:nowT() }]); }
-    finally{ setBusy(false); }
-  }
-
-  const lane=LANES.find(l=>l.id===conv.lane)||LANES[0];
-
-  return(
-    <Overlay onClose={onClose}>
-      <div style={{ ...MC(460),display:"flex",flexDirection:"column",maxHeight:"86vh" }} onClick={e=>e.stopPropagation()}>
-        <div style={{ background:acc.color,padding:"13px 16px",display:"flex",alignItems:"center",gap:10,flexShrink:0 }}>
-          <Av letter={conv.contact[0]} size={36} color="#fff" bg="rgba(255,255,255,.22)"/>
-          <div style={{ flex:1 }}>
-            <div style={{ color:"#fff",fontWeight:800,fontSize:14 }}>{conv.contact}</div>
-            <div style={{ color:"rgba(255,255,255,.65)",fontSize:11 }}>{conv.phone}</div>
-          </div>
-          <span style={{ fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:20,
-            background:"rgba(255,255,255,.22)",color:"#fff" }}>{lane.icon} {lane.label}</span>
-          {acc.type==="uazapi"&&(
-            <button onClick={loadHistory} disabled={loadingH} style={{
-              background:"rgba(255,255,255,.2)",border:"none",color:"#fff",borderRadius:8,
-              padding:"4px 9px",cursor:"pointer",fontSize:11,fontWeight:700,
-              display:"flex",alignItems:"center",gap:4 }}>
-              {loadingH?<Spin color="#fff" size={11}/>:"📜"} Histórico
-            </button>
-          )}
-          <button onClick={onClose} style={X}>✕</button>
-        </div>
-
-        <div style={{ padding:"6px 12px",background:"#1a2332",borderBottom:"1px solid #334155",
-          display:"flex",gap:4,flexShrink:0,overflowX:"auto",alignItems:"center" }}>
-          <span style={{ fontSize:9,color:"#475569",fontWeight:700,marginRight:4,whiteSpace:"nowrap" }}>Mover:</span>
-          {LANES.map(l=>(
-            <button key={l.id} onClick={()=>onMoveLane(conv.id,l.id)} style={{
-              fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:20,cursor:"pointer",whiteSpace:"nowrap",
-              border:conv.lane===l.id?`2px solid ${l.color}`:"2px solid transparent",
-              color:l.color,background:l.color+"18" }}>
-              {l.icon} {l.label}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ flex:1,overflowY:"auto",padding:14,background:"#1a1a2e",
-          display:"flex",flexDirection:"column",gap:8 }}>
-          {msgs.map((m,i)=>(
-            <div key={i} style={{ display:"flex",justifyContent:
-              m.from==="me"?"flex-end":m.from==="system"?"center":"flex-start" }}>
-              <div style={{ maxWidth:"76%",padding:"8px 12px",
-                borderRadius:m.from==="me"?"16px 16px 4px 16px":m.from==="system"?"8px":"16px 16px 16px 4px",
-                background:m.from==="me"?"#1d4e3a":m.from==="system"?"#2d2410":"#243040",
-                boxShadow:"0 1px 2px rgba(0,0,0,.3)",fontSize:13,
-                color:m.from==="system"?"#fbbf24":"#e2e8f0" }}>
-                {m.text}
-                <div style={{ fontSize:10,color:"#475569",marginTop:2,textAlign:"right" }}>{m.time}</div>
-              </div>
-            </div>
-          ))}
-          <div ref={end}/>
-        </div>
-
-        <div style={{ padding:"10px 12px",background:"#0f172a",display:"flex",gap:8,flexShrink:0 }}>
-          <input value={input} onChange={e=>setInput(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&send()}
-            placeholder="Digite uma mensagem…"
-            style={{ flex:1,border:"1px solid #334155",borderRadius:24,padding:"9px 15px",
-              fontSize:13,outline:"none",fontFamily:"inherit",background:"#1e293b",color:"#f1f5f9" }}/>
-          <button onClick={send} disabled={busy||!input.trim()} style={{
-            background:busy?"#334155":acc.color,color:"#fff",border:"none",
-            borderRadius:"50%",width:38,height:38,cursor:busy?"not-allowed":"pointer",
-            display:"flex",alignItems:"center",justifyContent:"center",fontSize:15 }}>
-            {busy?<Spin color="#fff" size={14}/>:"➤"}
-          </button>
-        </div>
-      </div>
-    </Overlay>
-  );
-}
-
-function BackupPanel({ onClose, convs, accounts, onRestore, toast_ }){
-  const [meta,setMeta]     = useState(loadBackupMeta);
-  const [saving,setSaving] = useState(false);
-
-  function doBackup(label="manual"){
-    setSaving(true);
-    const r=saveBackup(convs,accounts,label);
-    if(r.ok){ setMeta(loadBackupMeta()); toast_("✅ Backup salvo!"); }
-    else toast_("❌ Erro: "+r.error);
-    setSaving(false);
-  }
-  function doRestore(id){
-    const data=loadBackupData(id);
-    if(!data){ toast_("❌ Backup não encontrado."); return; }
-    onRestore(data.convs);
-    toast_(`✅ Restaurado: ${data.convs.length} conversa(s).`);
-    onClose();
-  }
-  function doDelete(id){
-    deleteBackup(id); setMeta(loadBackupMeta()); toast_("🗑️ Removido.");
-  }
-
-  return(
-    <Overlay onClose={onClose}>
-      <div style={{ ...MC(500),maxHeight:"88vh",display:"flex",flexDirection:"column" }} onClick={e=>e.stopPropagation()}>
-        <MH color="#6366f1" title="💾 Gerenciar Backups" onClose={onClose}/>
-        <div style={{ padding:20,display:"flex",flexDirection:"column",gap:16,flex:1,overflowY:"auto" }}>
-
-          <div style={{ background:"#1e293b",borderRadius:10,padding:"14px 16px",
-            border:"1px solid #334155",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap" }}>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:800,fontSize:13,color:"#f1f5f9" }}>Backup Automático</div>
-              <div style={{ fontSize:11,color:"#64748b",marginTop:3 }}>
-                Salva automaticamente a cada <strong style={{ color:"#818cf8" }}>1 hora</strong> no localStorage.
-                Últimos 10 backups mantidos.
-              </div>
-            </div>
-            <button onClick={()=>doBackup("manual")} disabled={saving} style={{
-              background:saving?"#334155":"#6366f1",color:"#fff",border:"none",borderRadius:8,
-              padding:"7px 14px",fontSize:12,fontWeight:700,cursor:saving?"not-allowed":"pointer",
-              display:"flex",alignItems:"center",gap:6 }}>
-              {saving?<Spin color="#fff" size={12}/>:"💾"} Salvar agora
-            </button>
-          </div>
-
-          <div style={{ display:"flex",gap:10 }}>
-            {[
-              { label:"Backups salvos",  value:meta.length,                               color:"#818cf8" },
-              { label:"Conversas atual", value:convs.length,                              color:"#34d399" },
-              { label:"Contas ativas",   value:accounts.filter(a=>a.enabled).length+"/4", color:"#fb923c" },
-            ].map(s=>(
-              <div key={s.label} style={{ flex:1,background:"#1e293b",borderRadius:9,padding:"10px 12px",border:"1px solid #334155" }}>
-                <div style={{ fontSize:20,fontWeight:900,color:s.color }}>{s.value}</div>
-                <div style={{ fontSize:10,color:"#475569",marginTop:2 }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:.6 }}>Backups Salvos</div>
-
-          {meta.length===0 && (
-            <div style={{ textAlign:"center",padding:"20px 0",color:"#475569",fontSize:13 }}>
-              Nenhum backup ainda.
-            </div>
-          )}
-          {meta.map((m,i)=>(
-            <div key={m.id} style={{ background:"#1e293b",borderRadius:10,padding:"12px 14px",
-              marginBottom:4,border:"1px solid #334155",display:"flex",alignItems:"center",gap:12 }}>
-              <div style={{ width:28,height:28,borderRadius:"50%",background:"#6366f118",
-                color:"#818cf8",fontWeight:800,fontSize:11,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                {meta.length-i}
-              </div>
-              <div style={{ flex:1 }}>
-                <div style={{ display:"flex",alignItems:"center",gap:6,flexWrap:"wrap" }}>
-                  <span style={{ fontWeight:700,fontSize:13,color:"#f1f5f9" }}>{m.ts}</span>
-                  <span style={{ fontSize:9,fontWeight:800,padding:"1px 7px",borderRadius:20,
-                    background:m.label==="auto"?"#6366f118":"#10b98118",
-                    color:m.label==="auto"?"#818cf8":"#34d399" }}>
-                    {m.label==="auto"?"AUTO":"MANUAL"}
-                  </span>
-                  {i===0&&<span style={{ fontSize:9,fontWeight:800,padding:"1px 7px",borderRadius:20,
-                    background:"#f9731644",color:"#fb923c" }}>RECENTE</span>}
-                </div>
-                <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{m.count} conversa{m.count!==1?"s":""}</div>
-              </div>
-              <div style={{ display:"flex",gap:6 }}>
-                <button onClick={()=>doRestore(m.id)} style={{
-                  background:"#10b98118",color:"#34d399",border:"1px solid #10b98133",
-                  borderRadius:7,padding:"5px 10px",fontSize:11,fontWeight:700,cursor:"pointer" }}>
-                  ↩ Restaurar
-                </button>
-                <button onClick={()=>doDelete(m.id)} style={{
-                  background:"#ef444418",color:"#f87171",border:"1px solid #ef444433",
-                  borderRadius:7,padding:"5px 8px",fontSize:11,cursor:"pointer" }}>
-                  🗑
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </Overlay>
-  );
-}
-
-function KCard({ conv, accounts, onOpen, isClassifying }){
-  const acc=accounts.find(a=>a.id===conv.accountId)||accounts[0];
-  return(
-    <div onClick={()=>!isClassifying&&onOpen(conv)} style={{
-      background:"#1e293b",borderRadius:12,padding:"12px 13px",marginBottom:8,
-      boxShadow:"0 2px 8px rgba(0,0,0,.3)",cursor:isClassifying?"default":"pointer",
-      border:`1px solid ${acc.color}28`,position:"relative",overflow:"hidden",
-      transition:"box-shadow .15s,transform .15s",opacity:isClassifying?.8:1,
-    }}
-      onMouseEnter={e=>{ if(!isClassifying){e.currentTarget.style.boxShadow=`0 4px 18px ${acc.color}33`;e.currentTarget.style.transform="translateY(-1px)"; }}}
-      onMouseLeave={e=>{e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.3)";e.currentTarget.style.transform=""; }}>
-      <div style={{ position:"absolute",left:0,top:0,right:0,height:3,background:acc.color }}/>
-      <div style={{ display:"flex",alignItems:"flex-start",gap:9,marginTop:2 }}>
-        <Av letter={conv.contact[0]} size={34} color={acc.color} bg={acc.color+"22"}/>
-        <div style={{ flex:1,minWidth:0 }}>
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
-            <span style={{ fontWeight:700,fontSize:13,color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:130 }}>
-              {conv.contact}
-            </span>
-            <span style={{ fontSize:10,color:"#475569",flexShrink:0 }}>{conv.time}</span>
-          </div>
-          <div style={{ fontSize:11,color:"#64748b",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>
-            {conv.lastMsg}
-          </div>
-          <div style={{ display:"flex",alignItems:"center",gap:5,marginTop:6,flexWrap:"wrap" }}>
-            <span style={{ fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:20,
-              color:acc.color,background:acc.color+"18" }}>{acc.name}</span>
-            <span style={{ fontSize:8,fontWeight:700,padding:"1px 5px",borderRadius:20,
-              color:acc.type==="uazapi"?"#818cf8":"#fbbf24",
-              background:acc.type==="uazapi"?"#6366f118":"#f59e0b18" }}>
-              {acc.type==="uazapi"?"UAZAPI":"NORMAL"}
-            </span>
-            {conv.unread>0&&<span style={{ background:acc.color,color:"#fff",borderRadius:"50%",
-              minWidth:16,height:16,fontSize:9,fontWeight:800,
-              display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px" }}>{conv.unread}</span>}
-            {conv.aiReason&&<span style={{ fontSize:9,color:"#475569",fontStyle:"italic",overflow:"hidden",
-              textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:90 }}>🤖 {conv.aiReason}</span>}
-          </div>
-        </div>
-      </div>
-      {isClassifying&&(
-        <div style={{ position:"absolute",inset:0,background:"rgba(15,23,42,.8)",
-          display:"flex",alignItems:"center",justifyContent:"center",borderRadius:12,gap:7 }}>
-          <Spin color="#818cf8" size={16}/><span style={{ fontSize:11,fontWeight:700,color:"#818cf8" }}>IA…</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Lane({ lane, convs, accounts, onOpen, classifyingIds }){
-  return(
-    <div style={{ flex:"1 1 220px",minWidth:220,maxWidth:295,display:"flex",flexDirection:"column" }}>
-      <div style={{ background:lane.dark,borderRadius:12,padding:"11px 14px",marginBottom:10,border:`1.5px solid ${lane.color}33` }}>
-        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-          <span style={{ fontSize:18 }}>{lane.icon}</span>
-          <div style={{ flex:1 }}>
-            <div style={{ fontWeight:800,fontSize:14,color:lane.color }}>{lane.label}</div>
-            <div style={{ fontSize:10,color:lane.color+"88" }}>{convs.length} conversa{convs.length!==1?"s":""}</div>
-          </div>
-          <div style={{ background:lane.color,color:"#fff",borderRadius:"50%",minWidth:24,height:24,
-            display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800 }}>{convs.length}</div>
-        </div>
-        <div style={{ display:"flex",gap:4,marginTop:8,flexWrap:"wrap" }}>
-          {accounts.map(acc=>{ const n=convs.filter(c=>c.accountId===acc.id).length; if(!n) return null;
-            return <span key={acc.id} style={{ fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:20,
-              color:acc.color,background:acc.color+"22" }}>{acc.name}: {n}</span>; })}
-        </div>
-      </div>
-      <div style={{ flex:1,overflowY:"auto",paddingRight:2 }}>
-        {convs.length===0&&<div style={{ textAlign:"center",padding:"20px 12px",color:"#334155",fontSize:12 }}>Vazio</div>}
-        {convs.map(c=><KCard key={c.id} conv={c} accounts={accounts} onOpen={onOpen} isClassifying={classifyingIds.has(c.id)}/>)}
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// APP
-// ════════════════════════════════════════════════════════════════════════════
-export default function App(){
-  const [accounts,setAccounts] = useState(()=>{
-    try{ const s=localStorage.getItem("multiatend:accounts"); return s?JSON.parse(s):INITIAL_ACCOUNTS; }
-    catch{ return INITIAL_ACCOUNTS; }
-  });
-  const [convs,setConvs]       = useState([]);
-  const [setupAcc,setSetupAcc] = useState(null);
-  const [qrAcc,setQrAcc]       = useState(null);
-  const [chat,setChat]         = useState(null);
-  const [syncing,setSyncing]   = useState({});
-  const [classifying,setClass] = useState(new Set());
-  const [showBackup,setShowBackup] = useState(false);
-  const [bkStatus,setBkStatus] = useState(()=>{ const m=loadBackupMeta(); return m[0]||null; });
-  const [toast,setToast]       = useState(null);
-  const bkRef = useRef();
-
-  function toast_(msg){ setToast(msg); setTimeout(()=>setToast(null),3500); }
-  function saveAcc(cfg){
-    const next=accounts.map(a=>a.id===cfg.id?cfg:a);
-    setAccounts(next);
-    localStorage.setItem("multiatend:accounts",JSON.stringify(next));
-    toast_(`✅ ${cfg.name} salvo!`);
-  }
-
-  useEffect(()=>{ bkRef.current={ convs, accounts }; },[convs,accounts]);
-
-  // Auto-backup 1h
-  useEffect(()=>{
-    const t=setInterval(()=>{
-      const { convs:c,accounts:a }=bkRef.current;
-      const r=saveBackup(c,a,"auto");
-      if(r.ok){ setBkStatus(r.entry); toast_("💾 Backup automático salvo!"); }
-    }, 60*60*1000);
-    return()=>clearInterval(t);
-  },[]);
-
-  // ─── WebSocket para mensagens em tempo real ─────────────────────────────────
-  useEffect(()=>{
-    const socket = io(window.location.origin, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: 5
-    });
-
-    socket.on('connect', () => {
-      console.log('🔌 WebSocket conectado');
-      toast_('🔌 Conectado ao servidor em tempo real');
-    });
-
-    socket.on('new_message', (msg) => {
-      console.log('📨 Nova mensagem via webhook:', msg);
-      // Procura se já existe conversa com esse contato
-      setConvs(p => {
-        const existing = p.find(c => c.phone === msg.phone);
-        if (existing) {
-          // Atualiza conversa existente
-          return p.map(c => c.phone === msg.phone ? {
-            ...c,
-            lastMsg: msg.message,
-            time: msg.time,
-            unread: c.unread + 1,
-            lane: msg.lane,
-            aiReason: msg.reason,
-            messages: [...(c.messages || []), {
-              from: 'contact',
-              text: msg.message,
-              time: msg.time
-            }]
+  useEffect(() => {
+    const socket = io(window.location.origin, { transports: ["websocket", "polling"], reconnection: true });
+    socket.on("connect", () => toast_("🔌 Tempo real ativo"));
+    socket.on("new_message", (msg) => {
+      setConvs((p) => {
+        const ex = p.find((c) => c.phone === msg.phone);
+        if (ex) {
+          return p.map((c) => c.phone === msg.phone ? {
+            ...c, lastMsg: msg.message, time: msg.time, unread: c.unread + 1,
+            lane: msg.lane, aiReason: msg.reason,
+            messages: [...(c.messages || []), { from: "contact", text: msg.message, time: msg.time }],
           } : c);
-        } else {
-          // Cria nova conversa
-          return [{
-            id: ++uid,
-            accountId: 1, // Default pra primeira conta
-            contact: msg.contact,
-            phone: msg.phone,
-            lastMsg: msg.message,
-            time: msg.time,
-            unread: 1,
-            lane: msg.lane,
-            aiReason: msg.reason,
-            messages: [{ from: 'contact', text: msg.message, time: msg.time }]
-          }, ...p];
         }
+        return [{
+          id: ++uid, accountId: 1, contact: msg.contact, phone: msg.phone,
+          lastMsg: msg.message, time: msg.time, unread: 1, lane: msg.lane, aiReason: msg.reason,
+          messages: [{ from: "contact", text: msg.message, time: msg.time }],
+        }, ...p];
       });
     });
-
-    socket.on('disconnect', () => {
-      console.log('❌ WebSocket desconectado');
-      toast_('⚠️ Conexão perdida com servidor');
-    });
-
     return () => socket.disconnect();
   }, []);
 
-  async function addConv(accountId,contact,phone,message){
-    const id=++uid;
-    setConvs(p=>[{ id,accountId,contact,phone,lastMsg:message,time:nowT(),
-      unread:1,lane:"espera",aiReason:"",
-      messages:[{ from:"contact",text:message,time:nowT() }] },...p]);
-    setClass(s=>new Set([...s,id]));
-    const r=await classifyMsg(contact,message);
-    setConvs(p=>p.map(c=>c.id===id?{...c,lane:r.lane||"espera",aiReason:r.reason||""}:c));
-    setClass(s=>{ const n=new Set(s); n.delete(id); return n; });
+  async function syncAccount(acc) {
+    if (!acc.baseUrl || !acc.token) { toast_("⚠️ Configure a conta primeiro"); return; }
+    toast_(`🔄 Sincronizando ${acc.name}...`);
+    try {
+      const r = await fetch(`/api/uazapi/chat/find?base=${encodeURIComponent(acc.baseUrl)}`, { headers: { token: acc.token } });
+      const data = await r.json();
+      toast_(`✅ ${Array.isArray(data) ? data.length : 0} conversas`);
+    } catch { toast_("❌ Erro ao sincronizar"); }
   }
 
-  async function syncAcc(acc){
-    if(!acc.baseUrl||!acc.token){ toast_("⚠️ Configure a conta Uazapi."); return; }
-    setSyncing(s=>({...s,[acc.id]:true}));
-    try{
-      const raw=await fetchChats(acc);
-      if(!raw.length){ toast_(`ℹ️ ${acc.name}: sem conversas.`); return; }
-      const mapped=raw.map(c=>({ id:++uid,accountId:acc.id,
-        contact:c.name||c.notify||"Desconhecido",
-        phone:c.phone||c.id||"",
-        lastMsg:c.lastMessage?.text||c.lastMsg||"…",
-        time:c.lastMessage?.datetime||nowT(),
-        unread:c.unread||0,lane:"espera",aiReason:"",messages:[] }));
-      setConvs(p=>[...p.filter(c=>c.accountId!==acc.id),...mapped]);
-      mapped.forEach(c=>{
-        setClass(s=>new Set([...s,c.id]));
-        classifyMsg(c.contact,c.lastMsg).then(r=>{
-          setConvs(p=>p.map(x=>x.id===c.id?{...x,lane:r.lane,aiReason:r.reason}:x));
-          setClass(s=>{ const n=new Set(s); n.delete(c.id); return n; });
-        });
-      });
-      toast_(`✅ ${acc.name}: ${mapped.length} carregadas.`);
-    }catch(e){ toast_(`❌ ${acc.name}: ${e.message}`); }
-    finally{ setSyncing(s=>({...s,[acc.id]:false})); }
-  }
+  const moveTo = (id, lane) => setConvs((p) => p.map((c) => c.id === id ? { ...c, lane } : c));
+  const markRead = (id) => setConvs((p) => p.map((c) => c.id === id ? { ...c, unread: 0 } : c));
 
-  function addDemo(accountId){
-    const contact=DEMO_NAMES[Math.floor(Math.random()*DEMO_NAMES.length)];
-    const message=DEMO_MSGS[Math.floor(Math.random()*DEMO_MSGS.length)];
-    const phone=`55119${String(Math.floor(Math.random()*89999999+10000000))}`;
-    addConv(accountId,contact,phone,message);
-  }
+  const filteredConvs = convs.filter((c) => {
+    if (filterAccount !== "todas" && c.accountId !== filterAccount) return false;
+    if (filterLane !== "todas" && c.lane !== filterLane) return false;
+    return true;
+  });
 
-  function moveLane(id,lane){
-    setConvs(p=>p.map(c=>c.id===id?{...c,lane}:c));
-    setChat(p=>p?.id===id?{...p,lane}:p);
-  }
-  function openChat(conv){
-    setConvs(p=>p.map(c=>c.id===conv.id?{...c,unread:0}:c));
-    setChat({...conv});
-  }
+  const counts = LANES.reduce((a, l) => {
+    a[l.id] = convs.filter((c) => c.lane === l.id && (filterAccount === "todas" || c.accountId === filterAccount)).length;
+    return a;
+  }, {});
 
-  const totalUnread=convs.reduce((a,c)=>a+c.unread,0);
-  const chatAcc=chat?accounts.find(a=>a.id===chat.accountId):null;
-
-  return(
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0;}
-        body{background:#0b1120;font-family:'Inter',sans-serif;}
-        ::-webkit-scrollbar{width:4px;}
-        ::-webkit-scrollbar-thumb{background:#334155;border-radius:4px;}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-        @keyframes glow{0%,100%{box-shadow:0 0 0 0 #6366f155}50%{box-shadow:0 0 0 5px transparent}}
-      `}</style>
-      <div style={{ minHeight:"100vh",background:"#0b1120" }}>
-        {/* TOP BAR */}
-        <div style={{ background:"#0f172a",borderBottom:"1px solid #1e293b",
-          height:60,padding:"0 20px",display:"flex",alignItems:"center",gap:12 }}>
-          <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-            <div style={{ width:34,height:34,borderRadius:9,
-              background:"linear-gradient(135deg,#7c3aed,#0ea5e9)",
-              display:"flex",alignItems:"center",justifyContent:"center" }}><WaIcon/></div>
-            <div>
-              <div style={{ fontWeight:800,fontSize:14,color:"#f1f5f9",lineHeight:1.1 }}>MultiAtend</div>
-              <div style={{ fontSize:9,color:"#475569",letterSpacing:.5 }}>IA · KANBAN · BACKUP</div>
-            </div>
+  return (
+    <div style={{ minHeight: "100vh", background: "#f0f2f5", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+      <header style={{ background: "#075E54", color: "white", padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontSize: 24 }}>💬</div>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 16 }}>MultiAtend</div>
+            <div style={{ fontSize: 11, opacity: 0.85 }}>{accounts.filter((a) => a.enabled).length} conta(s) · {convs.length} conversa(s)</div>
           </div>
-
-          <div style={{ display:"flex",gap:5,marginLeft:6,flexWrap:"wrap" }}>
-            {accounts.map(acc=>(
-              <button key={acc.id} onClick={()=>setSetupAcc(acc)} style={{
-                display:"flex",alignItems:"center",gap:5,padding:"3px 9px",borderRadius:20,
-                background:acc.color+"14",border:`1px solid ${acc.color}33`,cursor:"pointer" }}>
-                <div style={{ width:6,height:6,borderRadius:"50%",background:acc.dot,
-                  animation:acc.enabled?"pulse 2s infinite":"none" }}/>
-                <span style={{ fontSize:10,fontWeight:700,color:acc.color }}>{acc.name}</span>
-                {acc.type==="uazapi"&&acc.enabled&&(
-                  <>
-                    <button onClick={e=>{e.stopPropagation();syncAcc(acc);}}
-                      style={{ background:"none",border:"none",color:acc.color,cursor:"pointer",fontSize:11,padding:0 }}>
-                      {syncing[acc.id]?<Spin color={acc.color} size={9}/>:"↻"}
-                    </button>
-                    <button onClick={e=>{e.stopPropagation();setQrAcc(acc);}}
-                      style={{ background:"none",border:"none",color:acc.color,cursor:"pointer",fontSize:11,padding:0 }}>📱</button>
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ flex:1 }}/>
-          <div style={{ display:"flex",alignItems:"center",gap:5,padding:"3px 9px",borderRadius:20,
-            background:"#6366f114",border:"1px solid #6366f133" }}>
-            <div style={{ width:6,height:6,borderRadius:"50%",background:"#818cf8",animation:"glow 2s infinite" }}/>
-            <span style={{ fontSize:9,fontWeight:800,color:"#818cf8" }}>IA ATIVA</span>
-          </div>
-          <div style={{ width:1,height:26,background:"#1e293b" }}/>
-          <button onClick={()=>setShowBackup(true)} style={{
-            display:"flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:8,
-            background:"#1e293b",border:"1px solid #334155",cursor:"pointer",color:"#94a3b8" }}>
-            <span style={{ fontSize:12 }}>💾</span>
-            <div style={{ textAlign:"left" }}>
-              <div style={{ fontSize:10,fontWeight:700,color:"#94a3b8" }}>Backup</div>
-              <div style={{ fontSize:9,color:"#475569" }}>{bkStatus?bkStatus.ts:"Nenhum"}</div>
-            </div>
-          </button>
-          <div style={{ width:1,height:26,background:"#1e293b" }}/>
-          <TopN label="Conversas" value={convs.length} color="#94a3b8"/>
-          <div style={{ width:1,height:26,background:"#1e293b" }}/>
-          <TopN label="Não lidas" value={totalUnread} color={totalUnread>0?"#f87171":"#334155"}/>
         </div>
-
-        {/* KANBAN */}
-        <div style={{ display:"flex",gap:12,padding:"16px 18px",
-          overflowX:"auto",minHeight:"calc(100vh - 60px)",alignItems:"flex-start" }}>
-          {LANES.map(lane=>(
-            <Lane key={lane.id} lane={lane}
-              convs={convs.filter(c=>c.lane===lane.id)}
-              accounts={accounts} onOpen={openChat} classifyingIds={classifying}/>
+        <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.15)", padding: 4, borderRadius: 8 }}>
+          {[
+            { id: "lista", label: "Lista", icon: "📋" },
+            { id: "kanban", label: "Kanban", icon: "📊" },
+            { id: "porconta", label: "Por Conta", icon: "📦" },
+          ].map((m) => (
+            <button key={m.id} onClick={() => setView(m.id)} style={{
+              background: view === m.id ? "white" : "transparent",
+              color: view === m.id ? "#075E54" : "white",
+              border: "none", padding: "6px 12px", fontSize: 12, borderRadius: 6, cursor: "pointer",
+              fontWeight: view === m.id ? 600 : 400, transition: "all 0.2s",
+            }}>{m.icon} {m.label}</button>
           ))}
         </div>
+      </header>
+
+      <div style={{ background: "#f8f9fa", padding: "10px 20px", display: "flex", gap: 8, overflowX: "auto", borderBottom: "1px solid #e0e0e0" }}>
+        <button onClick={() => setFilterAccount("todas")} style={{
+          background: filterAccount === "todas" ? "#25D366" : "white",
+          color: filterAccount === "todas" ? "white" : "#666",
+          padding: "5px 12px", border: filterAccount === "todas" ? "none" : "1px solid #ddd",
+          borderRadius: 14, fontSize: 12, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+        }}>Todas ({convs.length})</button>
+        {accounts.map((acc) => {
+          const count = convs.filter((c) => c.accountId === acc.id).length;
+          const active = filterAccount === acc.id;
+          return (
+            <button key={acc.id} onClick={() => setFilterAccount(acc.id)} style={{
+              background: active ? acc.color : "white", color: active ? "white" : acc.color,
+              padding: "5px 12px", border: `1px solid ${acc.color}`, borderRadius: 14,
+              fontSize: 12, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+              display: "flex", alignItems: "center", gap: 6,
+            }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: active ? "white" : acc.color, display: "inline-block" }}></span>
+              {acc.name} ({count}){!acc.enabled && <span style={{ fontSize: 10, opacity: 0.7 }}>📵</span>}
+            </button>
+          );
+        })}
+        <button onClick={() => setSetupAcc(accounts[0])} style={{
+          marginLeft: "auto", background: "white", color: "#666", padding: "5px 12px",
+          border: "1px solid #ddd", borderRadius: 14, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+        }}>⚙️ Configurar</button>
       </div>
 
-      {setupAcc&&setupAcc.type==="uazapi"&&<SetupUazapi acc={setupAcc} onSave={saveAcc} onClose={()=>setSetupAcc(null)}/>}
-      {qrAcc&&<QrModal acc={qrAcc} onClose={()=>setQrAcc(null)}/>}
-      {chat&&chatAcc&&<ChatModal conv={chat} acc={chatAcc} onClose={()=>setChat(null)} onMoveLane={moveLane}/>}
-      {showBackup&&<BackupPanel onClose={()=>setShowBackup(false)} convs={convs} accounts={accounts}
-        onRestore={c=>setConvs(c)} toast_={toast_}/>}
+      <div style={{ background: "white", padding: "8px 20px", display: "flex", gap: 6, borderBottom: "1px solid #e0e0e0", overflowX: "auto" }}>
+        <button onClick={() => setFilterLane("todas")} style={{
+          background: filterLane === "todas" ? "#333" : "transparent",
+          color: filterLane === "todas" ? "white" : "#666",
+          padding: "4px 10px", border: "1px solid #ddd", borderRadius: 12,
+          fontSize: 11, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+        }}>Todas</button>
+        {LANES.map((lane) => (
+          <button key={lane.id} onClick={() => setFilterLane(lane.id)} style={{
+            background: filterLane === lane.id ? lane.bg : "transparent",
+            color: filterLane === lane.id ? lane.textColor : "#666",
+            padding: "4px 10px", border: `1px solid ${filterLane === lane.id ? lane.color : "#ddd"}`,
+            borderRadius: 12, fontSize: 11, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+          }}>{lane.icon} {lane.label} ({counts[lane.id] || 0})</button>
+        ))}
+      </div>
 
-      {toast&&<div style={{ position:"fixed",bottom:18,left:"50%",transform:"translateX(-50%)",
-        background:"#1e293b",color:"#f1f5f9",padding:"9px 20px",borderRadius:30,
-        fontSize:12,fontWeight:700,zIndex:9999,animation:"fadeUp .2s ease",
-        boxShadow:"0 4px 20px rgba(0,0,0,.6)",border:"1px solid #334155",whiteSpace:"nowrap" }}>
-        {toast}</div>}
-    </>
+      <div style={{ padding: 16 }}>
+        {view === "lista" && <ListaView convs={filteredConvs} accounts={accounts} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} onMove={moveTo} />}
+        {view === "kanban" && <KanbanView convs={filteredConvs} accounts={accounts} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} onMove={moveTo} />}
+        {view === "porconta" && <PorContaView convs={convs} accounts={accounts} collapsed={collapsed} onToggleCollapse={(id) => setCollapsed((p) => ({ ...p, [id]: !p[id] }))} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} onMove={moveTo} onSync={syncAccount} onSetup={setSetupAcc} />}
+      </div>
+
+      {openChat && <ChatModal conv={openChat} accounts={accounts} onClose={() => setOpenChat(null)} onMove={moveTo} onSend={(text) => {
+        setConvs((p) => p.map((c) => c.id === openChat.id ? { ...c, lastMsg: text, time: timeNow(), messages: [...(c.messages || []), { from: "me", text, time: timeNow() }] } : c));
+        setOpenChat((p) => ({ ...p, messages: [...(p.messages || []), { from: "me", text, time: timeNow() }] }));
+      }} />}
+
+      {setupAcc && <SetupModal account={setupAcc} accounts={accounts} onClose={() => setSetupAcc(null)} onSave={(u) => { setAccounts((p) => p.map((a) => a.id === u.id ? u : a)); toast_(`✅ ${u.name} salvo`); setSetupAcc(null); }} onSwitch={setSetupAcc} />}
+
+      {toast && <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#333", color: "white", padding: "10px 20px", borderRadius: 8, fontSize: 13, zIndex: 9999 }}>{toast}</div>}
+    </div>
   );
 }
 
-// MICRO
-function Av({letter,size,color,bg}){
-  return <div style={{ width:size,height:size,borderRadius:"50%",background:bg,color,
-    fontWeight:800,fontSize:size*.4,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>{letter}</div>;
-}
-function TopN({label,value,color}){
-  return <div style={{ textAlign:"center" }}>
-    <div style={{ fontSize:17,fontWeight:900,color }}>{value}</div>
-    <div style={{ fontSize:9,color:"#475569",textTransform:"uppercase",letterSpacing:.4 }}>{label}</div>
-  </div>;
-}
-function Spin({color="#fff",size=18}){
-  return <div style={{ width:size,height:size,border:`2px solid ${color}33`,
-    borderTop:`2px solid ${color}`,borderRadius:"50%",animation:"spin .7s linear infinite",flexShrink:0 }}/>;
-}
-function FI({label,value,onChange,type="text",ph=""}){
-  return <label style={{ display:"flex",flexDirection:"column",gap:4 }}>
-    <span style={{ fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:.5 }}>{label}</span>
-    <input type={type} value={value} placeholder={ph} onChange={e=>onChange(e.target.value)}
-      style={{ border:"1px solid #334155",borderRadius:8,padding:"8px 11px",fontSize:13,outline:"none",
-        fontFamily:"inherit",background:"#0f172a",color:"#f1f5f9" }}/>
-  </label>;
-}
-function Tgl({label,value,onChange,color}){
-  return <div style={{ display:"flex",alignItems:"center",gap:9,cursor:"pointer" }} onClick={()=>onChange(!value)}>
-    <div style={{ width:36,height:20,borderRadius:10,background:value?color:"#334155",position:"relative",transition:"background .2s" }}>
-      <div style={{ width:16,height:16,borderRadius:"50%",background:"#fff",position:"absolute",
-        top:2,left:value?18:2,transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.4)" }}/>
+function ListaView({ convs, accounts, onOpen }) {
+  if (convs.length === 0) return <div style={{ background: "white", padding: 40, textAlign: "center", color: "#888", borderRadius: 8 }}>📭 Nenhuma conversa ainda<div style={{ fontSize: 12, marginTop: 8 }}>As mensagens vão aparecer aqui automaticamente</div></div>;
+  return (
+    <div style={{ background: "white", borderRadius: 8, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+      {convs.map((conv) => {
+        const acc = accounts.find((a) => a.id === conv.accountId) || accounts[0];
+        const lane = LANES.find((l) => l.id === conv.lane) || LANES[2];
+        return (
+          <div key={conv.id} onClick={() => onOpen(conv)} style={{
+            display: "flex", padding: "12px 16px", borderBottom: "1px solid #f0f0f0", cursor: "pointer",
+            alignItems: "center", gap: 12, borderLeft: `4px solid ${lane.color}`, transition: "background 0.2s",
+          }} onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")} onMouseLeave={(e) => (e.currentTarget.style.background = "white")}>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: acc.color, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: 14, flexShrink: 0 }}>{getInitials(conv.contact)}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: "#111" }}>{conv.contact}</div>
+                <div style={{ fontSize: 11, color: conv.unread > 0 ? lane.color : "#888", fontWeight: conv.unread > 0 ? 600 : 400 }}>{conv.time}</div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: "#666", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{conv.lastMsg}</div>
+                {conv.unread > 0 && <div style={{ background: "#25D366", color: "white", borderRadius: "50%", width: 20, height: 20, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>{conv.unread}</div>}
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
+                <span style={{ fontSize: 10, background: acc.color, color: "white", padding: "2px 6px", borderRadius: 4 }}>{acc.name}</span>
+                {conv.aiReason && <span style={{ fontSize: 10, color: "#888" }}>🤖 {conv.aiReason}</span>}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
-    <span style={{ fontSize:13,color:"#cbd5e1" }}>{label}</span>
-  </div>;
+  );
 }
-function PB({color,onClick,children}){
-  return <button onClick={onClick} style={{ background:color,color:"#fff",border:"none",borderRadius:9,
-    padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit" }}>{children}</button>;
+
+function KanbanView({ convs, accounts, onOpen }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+      {LANES.map((lane) => {
+        const items = convs.filter((c) => c.lane === lane.id);
+        return (
+          <div key={lane.id} style={{ background: "white", borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", background: lane.bg, color: lane.textColor, fontWeight: 600, fontSize: 13, display: "flex", justifyContent: "space-between" }}>
+              <span>{lane.icon} {lane.label}</span>
+              <span style={{ background: "white", padding: "1px 8px", borderRadius: 10, fontSize: 11 }}>{items.length}</span>
+            </div>
+            <div style={{ padding: 8, minHeight: 100 }}>
+              {items.length === 0 ? <div style={{ textAlign: "center", padding: 20, color: "#bbb", fontSize: 12 }}>Vazio</div> : items.map((conv) => {
+                const acc = accounts.find((a) => a.id === conv.accountId) || accounts[0];
+                return (
+                  <div key={conv.id} onClick={() => onOpen(conv)} style={{
+                    background: "white", border: "1px solid #e0e0e0", borderLeft: `3px solid ${acc.color}`,
+                    padding: 10, borderRadius: 6, marginBottom: 8, cursor: "pointer", fontSize: 12,
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{conv.contact}</div>
+                      {conv.unread > 0 && <div style={{ background: "#25D366", color: "white", borderRadius: "50%", width: 18, height: 18, fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>{conv.unread}</div>}
+                    </div>
+                    <div style={{ color: "#666", fontSize: 11, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conv.lastMsg}</div>
+                    <div style={{ display: "flex", gap: 4, marginTop: 6, fontSize: 9 }}>
+                      <span style={{ background: acc.color, color: "white", padding: "1px 5px", borderRadius: 3 }}>{acc.name}</span>
+                      <span style={{ color: "#888" }}>⏱ {conv.time}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
-function MH({color,title,onClose}){
-  return <div style={{ background:color,padding:"13px 16px",display:"flex",alignItems:"center" }}>
-    <span style={{ color:"#fff",fontWeight:800,fontSize:14,flex:1 }}>{title}</span>
-    <button onClick={onClose} style={X}>✕</button>
-  </div>;
+
+function PorContaView({ convs, accounts, collapsed, onToggleCollapse, onOpen, onSync, onSetup }) {
+  return (
+    <div>
+      {accounts.map((acc) => {
+        const accConvs = convs.filter((c) => c.accountId === acc.id);
+        const isCollapsed = collapsed[acc.id];
+        return (
+          <div key={acc.id} style={{ background: "white", borderRadius: 8, marginBottom: 12, overflow: "hidden", borderTop: `4px solid ${acc.color}`, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+            <div onClick={() => onToggleCollapse(acc.id)} style={{ padding: "12px 16px", background: acc.colorLight, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: acc.color }}></div>
+                <span style={{ fontWeight: 600, fontSize: 14, color: acc.color }}>{acc.name}</span>
+                <span style={{ fontSize: 11, color: "#666", background: "white", padding: "2px 8px", borderRadius: 10 }}>{accConvs.length} conversa(s)</span>
+                {!acc.enabled && <span style={{ fontSize: 11, color: "#999" }}>📵 Desconectado</span>}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {acc.enabled && <button onClick={(e) => { e.stopPropagation(); onSync(acc); }} style={{ background: "white", border: `1px solid ${acc.color}`, color: acc.color, padding: "4px 10px", borderRadius: 6, fontSize: 11, cursor: "pointer" }}>🔄 Sync</button>}
+                <button onClick={(e) => { e.stopPropagation(); onSetup(acc); }} style={{ background: "white", border: "1px solid #ddd", color: "#666", padding: "4px 10px", borderRadius: 6, fontSize: 11, cursor: "pointer" }}>⚙️ Config</button>
+                <span style={{ fontSize: 16, color: acc.color }}>{isCollapsed ? "▶" : "▼"}</span>
+              </div>
+            </div>
+            {!isCollapsed && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, padding: 10 }}>
+                {LANES.map((lane) => {
+                  const items = accConvs.filter((c) => c.lane === lane.id);
+                  return (
+                    <div key={lane.id} style={{ background: lane.bg, borderRadius: 6, padding: 8, minHeight: 80 }}>
+                      <div style={{ fontSize: 11, color: lane.textColor, fontWeight: 600, marginBottom: 6 }}>{lane.icon} {lane.label} ({items.length})</div>
+                      {items.length === 0 ? <div style={{ fontSize: 10, color: "#aaa", textAlign: "center", padding: 8 }}>Vazio</div> : items.map((conv) => (
+                        <div key={conv.id} onClick={() => onOpen(conv)} style={{ background: "white", padding: "6px 8px", borderRadius: 4, fontSize: 11, marginBottom: 4, cursor: "pointer" }}>
+                          <div style={{ fontWeight: 600, fontSize: 12 }}>{conv.contact}</div>
+                          <div style={{ color: "#888", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conv.lastMsg}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
-function WaIcon(){
-  return <svg width="19" height="19" viewBox="0 0 24 24" fill="white">
-    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-  </svg>;
+
+function ChatModal({ conv, accounts, onClose, onMove, onSend }) {
+  const [text, setText] = useState("");
+  const acc = accounts.find((a) => a.id === conv.accountId) || accounts[0];
+  const msgsEnd = useRef(null);
+  useEffect(() => msgsEnd.current?.scrollIntoView({ behavior: "smooth" }), [conv.messages]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#e5ddd5", width: "90%", maxWidth: 500, height: "80vh", borderRadius: 12, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ background: "#075E54", color: "white", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: acc.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: 14 }}>{getInitials(conv.contact)}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600 }}>{conv.contact}</div>
+            <div style={{ fontSize: 11, opacity: 0.85 }}>{conv.phone} · {acc.name}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "white", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ padding: 8, background: "white", borderBottom: "1px solid #ddd", display: "flex", gap: 4, overflowX: "auto" }}>
+          {LANES.map((lane) => (
+            <button key={lane.id} onClick={() => onMove(conv.id, lane.id)} style={{
+              background: conv.lane === lane.id ? lane.bg : "white",
+              color: conv.lane === lane.id ? lane.textColor : "#666",
+              border: `1px solid ${conv.lane === lane.id ? lane.color : "#ddd"}`,
+              padding: "4px 10px", borderRadius: 6, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap",
+            }}>{lane.icon} {lane.label}</button>
+          ))}
+        </div>
+        <div style={{ flex: 1, padding: 16, overflowY: "auto", background: "#e5ddd5" }}>
+          {(conv.messages || []).map((m, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: m.from === "me" ? "flex-end" : "flex-start", marginBottom: 8 }}>
+              <div style={{ background: m.from === "me" ? "#dcf8c6" : "white", padding: "8px 12px", borderRadius: 8, maxWidth: "75%", fontSize: 13, boxShadow: "0 1px 1px rgba(0,0,0,0.1)" }}>
+                <div>{m.text}</div>
+                <div style={{ fontSize: 10, color: "#888", textAlign: "right", marginTop: 2 }}>{m.time}</div>
+              </div>
+            </div>
+          ))}
+          <div ref={msgsEnd}></div>
+        </div>
+        <div style={{ padding: 10, background: "#f0f0f0", display: "flex", gap: 8 }}>
+          <input type="text" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && text.trim()) { onSend(text); setText(""); } }} placeholder="Digite uma mensagem..." style={{ flex: 1, padding: "10px 14px", border: "none", borderRadius: 20, fontSize: 13, outline: "none" }} />
+          <button onClick={() => { if (text.trim()) { onSend(text); setText(""); } }} style={{ background: "#25D366", color: "white", border: "none", padding: "10px 16px", borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Enviar</button>
+        </div>
+      </div>
+    </div>
+  );
 }
-function MC(w){ return{ background:"#1e293b",borderRadius:16,width:w,maxWidth:"95vw",
-  boxShadow:"0 24px 64px rgba(0,0,0,.7)",overflow:"hidden" }; }
-const MP = { padding:22,display:"flex",flexDirection:"column",gap:13 };
-const infoBox = { padding:"9px 12px",background:"#1e1a00",borderRadius:8,fontSize:12,color:"#fbbf24",border:"1px solid #78350f" };
-const X = { background:"none",border:"none",color:"rgba(255,255,255,.7)",fontSize:17,cursor:"pointer",lineHeight:1,padding:2 };
+
+function SetupModal({ account, accounts, onClose, onSave, onSwitch }) {
+  const [form, setForm] = useState(account);
+  useEffect(() => setForm(account), [account.id]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", width: "90%", maxWidth: 500, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: form.color, color: "white", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 16 }}>Configurar Conta</div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>{form.name}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "white", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ padding: 12, background: "#f0f0f0", display: "flex", gap: 6, overflowX: "auto" }}>
+          {accounts.map((a) => (
+            <button key={a.id} onClick={() => onSwitch(a)} style={{
+              background: form.id === a.id ? a.color : "white",
+              color: form.id === a.id ? "white" : a.color,
+              border: `1px solid ${a.color}`, padding: "4px 10px", borderRadius: 12,
+              fontSize: 11, cursor: "pointer", whiteSpace: "nowrap",
+            }}>{a.name}</button>
+          ))}
+        </div>
+        <div style={{ padding: 20 }}>
+          <Field label="Nome da Conta" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+          <Field label="Gerenciador / Responsável" value={form.gerenciador} onChange={(v) => setForm({ ...form, gerenciador: v })} placeholder="Ex: Odilei" />
+          <Field label="URL Uazapi (base)" value={form.baseUrl} onChange={(v) => setForm({ ...form, baseUrl: v })} placeholder="https://sua-instancia.uazapi.com" />
+          <Field label="Session" value={form.session} onChange={(v) => setForm({ ...form, session: v })} placeholder="confirMEI" />
+          <Field label="Token" value={form.token} onChange={(v) => setForm({ ...form, token: v })} placeholder="seu-token" />
+          <Field label="Session Key (opcional)" value={form.sessionKey} onChange={(v) => setForm({ ...form, sessionKey: v })} />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13 }}>
+            <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
+            Conta ativa
+          </label>
+        </div>
+        <div style={{ padding: 16, borderTop: "1px solid #eee", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ background: "white", border: "1px solid #ddd", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>Cancelar</button>
+          <button onClick={() => onSave(form)} style={{ background: form.color, color: "white", border: "none", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Salvar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, value, onChange, placeholder }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>{label}</label>
+      <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{
+        width: "100%", padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, outline: "none",
+      }} />
+    </div>
+  );
+}
