@@ -912,19 +912,19 @@ function GroupsModal({ accounts, onClose, toast_, groupsFromConvs = [], onOpenGr
       const id = g.id || g.phone;
 
       return (
-        <div
-          key={id}
-          onClick={() => onOpenGroup?.(g)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "12px",
-            borderBottom: "1px solid #f0f0f0",
-            background: g.enabled ? "#f1f8e9" : "white",
-            cursor: "pointer",
-          }}
-        >
+<div
+  key={id}
+  onClick={() => onOpenGroup?.(g)}
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "12px",
+    borderBottom: "1px solid #f0f0f0",
+    background: g.enabled ? "#f1f8e9" : "white",
+    cursor: "pointer",
+  }}
+>
           {/* conteúdo atual do card */}
         </div>
       );
