@@ -902,7 +902,35 @@ function GroupsModal({ accounts, onClose, toast_, groupsFromConvs = [], onOpenGr
               <span style={{ fontSize: 12 }}>Quando um grupo receber mensagem, ele aparecerá aqui</span>
             </div>
           ) : (
-         groupList.map((g) => {
+        gruposPorConta.map(({ acc, grupos }) => (
+  <div key={acc.id}>
+    <div style={{ fontWeight: 700, color: acc.color, margin: "14px 0 8px" }}>
+      {acc.name} ({grupos.length})
+    </div>
+
+    {grupos.map((g) => {
+      const id = g.id || g.phone;
+
+      return (
+        <div
+          key={id}
+          onClick={() => onOpenGroup?.(g)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "12px",
+            borderBottom: "1px solid #f0f0f0",
+            background: g.enabled ? "#f1f8e9" : "white",
+            cursor: "pointer",
+          }}
+        >
+          {/* conteúdo atual do card */}
+        </div>
+      );
+    })}
+  </div>
+))
   const id = g.id || g.phone;
   const acc = accounts.find((a) => a.id === g.accountId) || accounts[0];
               return (
