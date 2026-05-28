@@ -839,6 +839,42 @@ function Field({ label, value, onChange, placeholder }) {
 }
 
 // ─── MODAL DE GRUPOS ─────────────────────────────────────────────────────────
+function GroupsModal({
+  accounts,
+  groupsFromConvs = [],
+  onClose,
+  toast_,
+  onOpenGroup,
+}) {
+
+  const [groups, setGroups] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  const groupList = groupsFromConvs.length
+    ? groupsFromConvs
+    : Object.entries(groups).map(([id, g]) => ({
+        id,
+        phone: g.phone || id,
+        contact: g.name || id,
+        accountId: g.accountId,
+        lastMsg: "Grupo detectado",
+        time: g.lastSeen || "",
+        isGroup: true,
+        area: "groups",
+        messages: [],
+      }));
+
+  function toggleGroup(id) {
+    setGroups((p) => ({
+      ...p,
+      [id]: {
+        ...p[id],
+        enabled: !p[id]?.enabled,
+      },
+    }));
+  }
+
+  return (
 {groupList.length === 0 ? (
   <div style={{ textAlign: "center", padding: 40, color: "#888" }}>
     📭 Nenhum grupo detectado ainda<br />
@@ -948,6 +984,8 @@ function Field({ label, value, onChange, placeholder }) {
     );
   })
 )}
+  );
+}
 // ─── MODAL NOVA CONVERSA ─────────────────────────────────────────────────────
 function NewChatModal({ accounts, onClose, toast_, onStarted }) {
   const [accountId, setAccountId] = useState(accounts.find(a => a.enabled)?.id || 1);
