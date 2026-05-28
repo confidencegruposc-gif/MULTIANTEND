@@ -336,10 +336,22 @@ function MainApp({ onLogout }) {
             background: "rgba(255,255,255,0.15)", color: "white", border: "none",
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
           }}>👥 Grupos</button>
-          <button onClick={onLogout} title="Sair" style={{
-            background: "rgba(255,255,255,0.15)", color: "white", border: "none",
-            padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
-          }}>🚪 Sair</button>
+          <button
+  onClick={() => setModoGrupos(!modoGrupos)}
+  title="Grupos"
+  style={{
+    background: "rgba(255,255,255,0.15)",
+    color: "white",
+    border: "none",
+    padding: "6px 10px",
+    fontSize: 12,
+    borderRadius: 6,
+    cursor: "pointer",
+  }}
+>
+  {modoGrupos ? "💬 Conversas" : "👥 Grupos"}
+</button>
+            🚪 Sair</button>
         </div>
       </header>
 
