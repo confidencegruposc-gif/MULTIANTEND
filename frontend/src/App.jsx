@@ -412,7 +412,9 @@ const filteredGroups = convs.filter((c) => {
           borderRadius: 14, fontSize: 12, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
         }}>Todas ({convs.length})</button>
         {accounts.map((acc) => {
-          const count = convs.filter((c) => c.accountId === acc.id).length;
+         const count = convs.filter(
+  (c) => Number(c.accountId) === Number(acc.id)
+).length;
           const active = filterAccount === acc.id;
           return (
             <button key={acc.id} onClick={() => setFilterAccount(acc.id)} style={{
@@ -576,7 +578,9 @@ function PorContaView({ convs, accounts, collapsed, onToggleCollapse, onOpen, on
   return (
     <div>
       {accounts.map((acc) => {
-        const accConvs = convs.filter((c) => c.accountId === acc.id);
+       const accConvs = convs.filter(
+  (c) => Number(c.accountId) === Number(acc.id)
+);
         const isCollapsed = collapsed[acc.id];
         return (
           <div key={acc.id} style={{ background: "white", borderRadius: 8, marginBottom: 12, overflow: "hidden", borderTop: `4px solid ${acc.color}`, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
