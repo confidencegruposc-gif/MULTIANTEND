@@ -160,6 +160,9 @@ function MainApp({ onLogout }) {
   const [openChat, setOpenChat] = useState(null);
   const [setupAcc, setSetupAcc] = useState(null);
   const [showGroups, setShowGroups] = useState(false);
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [tickets, setTickets] = useState([]);
+  const [showTickets, setShowTickets] = useState(false);
   const [toast, setToast] = useState("");
   const [collapsed, setCollapsed] = useState({});
   const [loaded, setLoaded] = useState(false);
@@ -177,6 +180,7 @@ function MainApp({ onLogout }) {
             setAccounts(data.accounts);
           }
           if (data.convs) setConvs(data.convs);
+          if (data.tickets) setTickets(data.tickets);
           toast_("✅ Configuração carregada");
         }
       } catch {
@@ -193,14 +197,14 @@ function MainApp({ onLogout }) {
       try {
         await api("/api/config", {
           method: "POST",
-          body: JSON.stringify({ accounts, convs }),
+          body: JSON.stringify({ accounts, convs, tickets }),
         });
       } catch (e) {
         console.error("Erro ao salvar:", e);
       }
     }, 1000);
     return () => clearTimeout(t);
-  }, [accounts, convs, loaded]);
+  }, [accounts, convs, tickets, loaded]);
 
   // ─── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -293,6 +297,14 @@ function MainApp({ onLogout }) {
             background: "rgba(255,255,255,0.15)", color: "white", border: "none",
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
           }}>🗑️</button>
+          <button onClick={() => setShowNewChat(true)} title="Nova conversa" style={{
+            background: "rgba(255,255,255,0.15)", color: "white", border: "none",
+            padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
+          }}>✏️ Novo</button>
+          <button onClick={() => setShowTickets(true)} title="Chamados" style={{
+            background: "rgba(255,255,255,0.15)", color: "white", border: "none",
+            padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
+          }}>🎫 Chamados{tickets.filter(t => t.status !== "fechado").length > 0 ? ` (${tickets.filter(t => t.status !== "fechado").length})` : ""}</button>
           <button onClick={() => setShowGroups(true)} title="Grupos" style={{
             background: "rgba(255,255,255,0.15)", color: "white", border: "none",
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
@@ -357,7 +369,15 @@ function MainApp({ onLogout }) {
 
       {openChat && (() => {
         const liveConv = convs.find((c) => c.id === openChat.id) || openChat;
-        return <ChatModal conv={liveConv} accounts={accounts} toast_={toast_} onClose={() => setOpenChat(null)} onMove={moveTo} onSend={(text) => {
+        return <ChatModal conv={liveConv} accounts={accounts} toast_={toast_} onClose={() => setOpenChat(null)} onMove={moveTo} onTicket={(c) => {
+          const newTicket = {
+            id: Date.now(), convId: c.id, contact: c.contact, phone: c.phone,
+            accountId: c.accountId, title: `Atendimento - ${c.contact}`,
+            status: "aberto", createdAt: new Date().toISOString(),
+          };
+          setTickets((p) => [newTicket, ...p]);
+          toast_("🎫 Chamado aberto!");
+        }} onSend={(text) => {
           setConvs((p) => p.map((c) => c.id === openChat.id ? { ...c, lastMsg: text, time: timeNow(), messages: [...(c.messages || []), { from: "me", text, time: timeNow() }] } : c));
         }} />;
       })()}
@@ -365,6 +385,14 @@ function MainApp({ onLogout }) {
       {setupAcc && <SetupModal account={setupAcc} accounts={accounts} onClose={() => setSetupAcc(null)} onSave={(u) => { setAccounts((p) => p.map((a) => a.id === u.id ? u : a)); toast_(`✅ ${u.name} salvo no servidor`); setSetupAcc(null); }} onSwitch={setSetupAcc} />}
 
       {showGroups && <GroupsModal accounts={accounts} onClose={() => setShowGroups(false)} toast_={toast_} />}
+
+      {showNewChat && <NewChatModal accounts={accounts} onClose={() => setShowNewChat(false)} toast_={toast_} onStarted={(conv) => {
+        setConvs((p) => [conv, ...p]);
+        setShowNewChat(false);
+        setOpenChat(conv);
+      }} />}
+
+      {showTickets && <TicketsModal tickets={tickets} setTickets={setTickets} convs={convs} accounts={accounts} onClose={() => setShowTickets(false)} toast_={toast_} onOpenConv={(c) => { setShowTickets(false); setOpenChat(c); }} />}
 
       {toast && <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#333", color: "white", padding: "10px 20px", borderRadius: 8, fontSize: 13, zIndex: 9999 }}>{toast}</div>}
     </div>
@@ -490,7 +518,7 @@ function PorContaView({ convs, accounts, collapsed, onToggleCollapse, onOpen, on
   );
 }
 
-function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_ }) {
+function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_, onTicket }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [summary, setSummary] = useState("");
@@ -594,6 +622,7 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_ }) {
             <div style={{ fontSize: 11, opacity: 0.85 }}>{conv.phone} · {acc.name}</div>
           </div>
           <button onClick={genSummary} title="Resumo IA" style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "white", padding: "6px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer", marginRight: 4 }}>🤖 Resumo</button>
+          <button onClick={() => { if(onTicket) onTicket(conv); }} title="Abrir chamado" style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "white", padding: "6px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer", marginRight: 4 }}>🎫 Chamado</button>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: "white", fontSize: 20, cursor: "pointer" }}>✕</button>
         </div>
 
@@ -824,6 +853,166 @@ function GroupsModal({ accounts, onClose, toast_ }) {
 
         <div style={{ padding: 16, borderTop: "1px solid #eee", textAlign: "center" }}>
           <button onClick={onClose} style={{ background: "#25D366", color: "white", border: "none", padding: "10px 24px", borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Pronto</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MODAL NOVA CONVERSA ─────────────────────────────────────────────────────
+function NewChatModal({ accounts, onClose, toast_, onStarted }) {
+  const [accountId, setAccountId] = useState(accounts.find(a => a.enabled)?.id || 1);
+  const [phone, setPhone] = useState("");
+  const [contact, setContact] = useState("");
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  async function start() {
+    if (!phone.trim() || !text.trim()) { toast_("⚠️ Preencha número e mensagem"); return; }
+    setSending(true);
+    const cleanPhone = phone.replace(/\D/g, "");
+    try {
+      const r = await api("/api/send", {
+        method: "POST",
+        body: JSON.stringify({ accountId, phone: cleanPhone, type: "text", text }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        toast_("✅ Conversa iniciada!");
+        onStarted({
+          id: Date.now(), accountId, contact: contact || cleanPhone, phone: cleanPhone,
+          lastMsg: text, time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+          unread: 0, lane: "atendimento", aiReason: "",
+          messages: [{ from: "me", text, time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) }],
+        });
+      } else {
+        toast_("❌ Erro ao enviar");
+      }
+    } catch { toast_("❌ Erro de conexão"); }
+    setSending(false);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", width: "90%", maxWidth: 450, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: "#075E54", color: "white", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontWeight: 600, fontSize: 16 }}>✏️ Nova Conversa</div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "white", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ padding: 20 }}>
+          <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Conta para enviar</label>
+          <select value={accountId} onChange={(e) => setAccountId(Number(e.target.value))} style={{ width: "100%", padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}>
+            {accounts.filter(a => a.enabled).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Número (com DDD, ex: 5547999998888)</label>
+          <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="5547999998888" style={{ width: "100%", padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, marginBottom: 12, boxSizing: "border-box" }} />
+          <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Nome do contato (opcional)</label>
+          <input type="text" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="João Silva" style={{ width: "100%", padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, marginBottom: 12, boxSizing: "border-box" }} />
+          <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Mensagem</label>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Olá! Tudo bem?" rows={3} style={{ width: "100%", padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, marginBottom: 12, boxSizing: "border-box", resize: "vertical" }} />
+        </div>
+        <div style={{ padding: 16, borderTop: "1px solid #eee", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ background: "white", border: "1px solid #ddd", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>Cancelar</button>
+          <button onClick={start} disabled={sending} style={{ background: sending ? "#aaa" : "#25D366", color: "white", border: "none", padding: "8px 16px", borderRadius: 6, cursor: sending ? "wait" : "pointer", fontSize: 13, fontWeight: 600 }}>{sending ? "Enviando..." : "Iniciar Conversa"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MODAL CHAMADOS/TICKETS ──────────────────────────────────────────────────
+function TicketsModal({ tickets, setTickets, convs, accounts, onClose, toast_, onOpenConv }) {
+  const [newTitle, setNewTitle] = useState("");
+  const [filter, setFilter] = useState("abertos");
+
+  const TICKET_STATUS = {
+    aberto: { label: "Aberto", color: "#ea580c", bg: "#ffedd5" },
+    andamento: { label: "Em andamento", color: "#0ea5e9", bg: "#e0f2fe" },
+    fechado: { label: "Fechado", color: "#16a34a", bg: "#dcfce7" },
+  };
+
+  function addTicket() {
+    if (!newTitle.trim()) return;
+    setTickets((p) => [{
+      id: Date.now(), title: newTitle, status: "aberto",
+      createdAt: new Date().toISOString(), convId: null,
+    }, ...p]);
+    setNewTitle("");
+    toast_("🎫 Chamado criado!");
+  }
+
+  function updateStatus(id, status) {
+    setTickets((p) => p.map((t) => t.id === id ? { ...t, status } : t));
+  }
+
+  function deleteTicket(id) {
+    setTickets((p) => p.filter((t) => t.id !== id));
+    toast_("🗑️ Chamado removido");
+  }
+
+  const filtered = tickets.filter((t) => {
+    if (filter === "abertos") return t.status !== "fechado";
+    if (filter === "fechados") return t.status === "fechado";
+    return true;
+  });
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", width: "90%", maxWidth: 550, borderRadius: 12, overflow: "hidden", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ background: "#075E54", color: "white", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 16 }}>🎫 Chamados / Tarefas</div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>{tickets.filter(t => t.status !== "fechado").length} aberto(s)</div>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "white", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+
+        {/* Criar novo */}
+        <div style={{ padding: 12, background: "#f5f5f5", display: "flex", gap: 8 }}>
+          <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTicket()} placeholder="Novo chamado/tarefa..." style={{ flex: 1, padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13 }} />
+          <button onClick={addTicket} style={{ background: "#25D366", color: "white", border: "none", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>+ Criar</button>
+        </div>
+
+        {/* Filtros */}
+        <div style={{ padding: "8px 12px", display: "flex", gap: 6, borderBottom: "1px solid #eee" }}>
+          {["abertos", "fechados", "todos"].map((f) => (
+            <button key={f} onClick={() => setFilter(f)} style={{
+              background: filter === f ? "#075E54" : "white", color: filter === f ? "white" : "#666",
+              border: "1px solid #ddd", padding: "4px 12px", borderRadius: 12, fontSize: 11, cursor: "pointer", textTransform: "capitalize",
+            }}>{f}</button>
+          ))}
+        </div>
+
+        {/* Lista */}
+        <div style={{ padding: 12, overflowY: "auto", flex: 1 }}>
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 40, color: "#888" }}>📭 Nenhum chamado</div>
+          ) : (
+            filtered.map((t) => {
+              const st = TICKET_STATUS[t.status] || TICKET_STATUS.aberto;
+              const acc = accounts.find((a) => a.id === t.accountId);
+              const conv = convs.find((c) => c.id === t.convId);
+              return (
+                <div key={t.id} style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, marginBottom: 8, borderLeft: `4px solid ${st.color}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{t.title}</div>
+                      {t.contact && <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>👤 {t.contact} {acc && `· ${acc.name}`}</div>}
+                      <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>{new Date(t.createdAt).toLocaleString("pt-BR")}</div>
+                    </div>
+                    <span style={{ background: st.bg, color: st.color, padding: "2px 8px", borderRadius: 8, fontSize: 11, fontWeight: 500 }}>{st.label}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    {t.status !== "aberto" && <button onClick={() => updateStatus(t.id, "aberto")} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, border: "1px solid #ea580c", background: "white", color: "#ea580c", cursor: "pointer" }}>Reabrir</button>}
+                    {t.status === "aberto" && <button onClick={() => updateStatus(t.id, "andamento")} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, border: "1px solid #0ea5e9", background: "white", color: "#0ea5e9", cursor: "pointer" }}>▶ Andamento</button>}
+                    {t.status !== "fechado" && <button onClick={() => updateStatus(t.id, "fechado")} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, border: "1px solid #16a34a", background: "white", color: "#16a34a", cursor: "pointer" }}>✓ Fechar</button>}
+                    {conv && <button onClick={() => onOpenConv(conv)} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, border: "1px solid #075E54", background: "white", color: "#075E54", cursor: "pointer" }}>💬 Abrir conversa</button>}
+                    <button onClick={() => deleteTicket(t.id)} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, border: "1px solid #dc2626", background: "white", color: "#dc2626", cursor: "pointer", marginLeft: "auto" }}>🗑️</button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>
