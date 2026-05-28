@@ -458,7 +458,19 @@ const filteredGroups = convs.filter((c) => {
 
       {setupAcc && <SetupModal account={setupAcc} accounts={accounts} onClose={() => setSetupAcc(null)} onSave={(u) => { setAccounts((p) => p.map((a) => a.id === u.id ? u : a)); toast_(`✅ ${u.name} salvo no servidor`); setSetupAcc(null); }} onSwitch={setSetupAcc} />}
 
-      {showGroups && <GroupsModal accounts={accounts} onClose={() => setShowGroups(false)} toast_={toast_} />}
+      {showGroups && (
+  <GroupsModal
+    accounts={accounts}
+    groupsFromConvs={filteredGroups}
+    onClose={() => setShowGroups(false)}
+    toast_={toast_}
+    onOpenGroup={(grupo) => {
+      setShowGroups(false);
+      setOpenChat(grupo);
+      markRead(grupo.id);
+    }}
+  />
+)}
 
       {showNewChat && <NewChatModal accounts={accounts} onClose={() => setShowNewChat(false)} toast_={toast_} onStarted={(conv) => {
         setConvs((p) => [conv, ...p]);
