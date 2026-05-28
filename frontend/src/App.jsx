@@ -874,7 +874,6 @@ function GroupsModal({
     }));
   }
 
-  return (
 return (
   <div style={{ padding: 16 }}>
     {groupList.length === 0 ? (
