@@ -269,11 +269,17 @@ function MainApp({ onLogout }) {
   const moveTo = (id, lane) => setConvs((p) => p.map((c) => c.id === id ? { ...c, lane } : c));
   const markRead = (id) => setConvs((p) => p.map((c) => c.id === id ? { ...c, unread: 0 } : c));
 
-  const filteredConvs = convs.filter((c) => {
-    if (filterAccount !== "todas" && c.accountId !== filterAccount) return false;
-    if (filterLane !== "todas" && c.lane !== filterLane) return false;
-    return true;
-  });
+ const filteredConvs = convs.filter((c) => {
+  const isGroupConv = c.isGroup || c.area === "groups";
+
+  if (modoGrupos && !isGroupConv) return false;
+  if (!modoGrupos && isGroupConv) return false;
+
+  if (filterAccount !== "todas" && c.accountId !== filterAccount) return false;
+  if (filterLane !== "todas" && c.lane !== filterLane) return false;
+
+  return true;
+});
 
   const counts = LANES.reduce((a, l) => {
     a[l.id] = convs.filter((c) => c.lane === l.id && (filterAccount === "todas" || c.accountId === filterAccount)).length;
