@@ -215,74 +215,47 @@ function MainApp({ onLogout }) {
 
     socket.on("connect", () => toast_("🔌 Tempo real ativo"));
 
+    // Mensagens de clientes (e grupos ativados no atendimento)
     socket.on("new_message", (msg) => {
-  const aId = Number(msg.accountId || 1);
+      const aId = Number(msg.accountId || 1);
+      const rawPhone = String(msg.phone || "").replace("@s.whatsapp.net","").replace("@c.us","").replace("@g.us","");
+      const isGroupMsg = msg.isGroup || msg.area === "groups";
 
-  const cleanPhone = String(cleanPhone || "")
-    .replace("@s.whatsapp.net", "")
-    .replace("@c.us", "")
-    .replace("@g.us", "");
-
-  const isGroupMsg =
-    msg.isGroup || msg.area === "groups";
-
-  const newMsg = {
-    from: msg.fromMe ? "me" : "contact",
-    text: msg.message,
-    time: msg.time,
-    mediaUrl: msg.mediaUrl,
-    isImage: msg.isImage,
-    isAudio: msg.isAudio,
-    isDoc: msg.isDoc,
-    isGroup: isGroupMsg,
-  };
+      const newMsg = {
+        from: msg.fromMe ? "me" : "contact",
+        text: msg.message,
+        time: msg.time,
+        mediaUrl: msg.mediaUrl,
+        isImage: msg.isImage,
+        isAudio: msg.isAudio,
+        isDoc: msg.isDoc,
+        isGroup: isGroupMsg,
+      };
 
       setConvs((p) => {
-        const ex = p.find(
-  (c) =>
-    c.phone === cleanPhone &&
-    Number(c.accountId) === Number(aId)
-);
-
+        const key = isGroupMsg ? msg.phone : rawPhone; // grupos: usa rawId completo
+        const ex = p.find((c) => c.phone === key && Number(c.accountId) === aId);
         if (ex) {
-          return p.map((c) =>
-          c.phone === cleanPhone &&
-Number(c.accountId) === Number(aId)
-              ? {
-                  ...c,
-                  lastMsg: msg.message,
-                  time: msg.time,
-                  unread: (c.unread || 0) + 1,
-                  lane: msg.lane || c.lane || "espera",
-                  aiReason: msg.reason || c.aiReason || "",
-                  isGroup: isGroupMsg,
-                  area: isGroupMsg ? "groups" : "chats",
-                  messages: [...(c.messages || []), newMsg],
-                }
-              : c
-          );
+          return p.map((c) => c.phone === key && Number(c.accountId) === aId ? {
+            ...c, lastMsg: msg.message, time: msg.time, unread: (c.unread || 0) + 1,
+            lane: msg.lane || c.lane || "espera", aiReason: msg.reason || c.aiReason || "",
+            messages: [...(c.messages || []), newMsg],
+          } : c);
         }
-
-        return [
-          {
-            id: ++uid,
-            accountId: aId,
-            contact: msg.contact,
-            phone: cleanPhone,
-
-            isGroup: isGroupMsg,
-            area: isGroupMsg ? "groups" : "chats",
-
-            lastMsg: msg.message,
-            time: msg.time,
-            unread: 1,
-            lane: msg.lane || "espera",
-            aiReason: msg.reason || "",
-            messages: [newMsg],
-          },
-          ...p,
-        ];
+        return [{
+          id: ++uid, accountId: aId, contact: msg.contact, phone: key,
+          isGroup: isGroupMsg, area: isGroupMsg ? "groups" : "chats",
+          lastMsg: msg.message, time: msg.time, unread: 1,
+          lane: msg.lane || "espera", aiReason: msg.reason || "",
+          messages: [newMsg],
+        }, ...p];
       });
+    });
+
+    // Mensagens de grupos desativados (só preview, não vai pro atendimento)
+    socket.on("group_message", (msg) => {
+      // Atualiza o GroupsModal em tempo real (o modal relê do servidor)
+      // Não faz nada no kanban/lista - é só pra atualizar a última msg no modal de grupos
     });
 
     return () => socket.disconnect();
@@ -304,8 +277,8 @@ Number(c.accountId) === Number(aId)
   const filteredConvs = convs.filter((c) => {
     const isGroupConv = c.isGroup || c.area === "groups";
 
-    // Tela principal mostra somente conversas privadas
-    if (isGroupConv) return false;
+    // Grupos desativados: só aparecem no modal de Grupos, não aqui
+    if (isGroupConv && !c.enabledInAtendimento) return false;
 
     if (
   filterAccount !== "todas" &&
@@ -632,12 +605,41 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_, onTicket }
   const [sending, setSending] = useState(false);
   const [summary, setSummary] = useState("");
   const [showQuick, setShowQuick] = useState(false);
+  const [localMsgs, setLocalMsgs] = useState(conv.messages || []);
   const acc = accounts.find((a) => a.id === conv.accountId) || accounts[0];
   const msgsEnd = useRef(null);
   const fileInputRef = useRef(null);
   const imgInputRef = useRef(null);
 
-  useEffect(() => msgsEnd.current?.scrollIntoView({ behavior: "smooth" }), [conv.messages]);
+  useEffect(() => msgsEnd.current?.scrollIntoView({ behavior: "smooth" }), [localMsgs, conv.messages]);
+
+  // Atualiza msgs locais quando conv.messages muda (tempo real)
+  useEffect(() => { setLocalMsgs(conv.messages || []); }, [conv.messages]);
+
+  // Carrega histórico do servidor ao abrir (especialmente grupos)
+  useEffect(() => {
+    if (!conv.phone || !conv.accountId) return;
+    (async () => {
+      try {
+        const r = await api("/api/history", {
+          method: "POST",
+          body: JSON.stringify({ accountId: conv.accountId, phone: conv.phone }),
+        });
+        const data = await r.json();
+        if (data.ok && Array.isArray(data.messages) && data.messages.length > 0) {
+          const mapped = data.messages.map((m) => ({
+            from: m.fromMe ? "me" : "contact",
+            text: m.body || m.text || m.content?.text || m.content?.caption || "📩",
+            time: m.time || new Date(m.timestamp * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+            mediaUrl: m.mediaUrl || m.content?.URL || "",
+            isImage: (m.messageType || "").includes("image"),
+            isAudio: (m.messageType || "").includes("audio") || (m.messageType || "").includes("ptt"),
+          }));
+          setLocalMsgs(mapped);
+        }
+      } catch {}
+    })();
+  }, [conv.phone, conv.accountId]);
 
   const QUICK_REPLIES = [
     "Olá! Como posso ajudar? 😊",
@@ -664,7 +666,9 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_, onTicket }
       });
       const data = await r.json();
       if (data.ok) {
-        onSend(type === "text" ? msgText : `[${type === "image" ? "📷 Imagem" : type === "audio" ? "🎤 Áudio" : "📄 " + (fname || "Arquivo")}]`);
+        const sentText = type === "text" ? msgText : `[${type === "image" ? "📷 Imagem" : type === "audio" ? "🎤 Áudio" : "📄 " + (fname || "Arquivo")}]`;
+        setLocalMsgs((p) => [...p, { from: "me", text: sentText, time: timeNow() }]);
+        onSend(sentText);
         toast_("✅ Enviado!");
       } else {
         toast_("❌ Erro ao enviar");
@@ -760,7 +764,7 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_, onTicket }
 
         {/* Mensagens */}
         <div style={{ flex: 1, padding: 16, overflowY: "auto", background: "#e5ddd5" }}>
-          {(conv.messages || []).map((m, i) => (
+          {(localMsgs || []).map((m, i) => (
             <div key={i} style={{ display: "flex", justifyContent: m.from === "me" ? "flex-end" : "flex-start", marginBottom: 8 }}>
               <div style={{ background: m.from === "me" ? "#dcf8c6" : "white", padding: "8px 12px", borderRadius: 8, maxWidth: "75%", fontSize: 13, boxShadow: "0 1px 1px rgba(0,0,0,0.1)" }}>
                 {m.mediaUrl && m.isImage && <img src={m.mediaUrl} alt="" style={{ maxWidth: "100%", borderRadius: 6, marginBottom: 4 }} />}
