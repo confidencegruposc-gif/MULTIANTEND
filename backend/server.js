@@ -137,114 +137,246 @@ app.post("/api/groups", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Webhook ───────────────────────────────────────────────────────────────────
+```js
+// ─────────────────────────────────────────────────────────────
+// WEBHOOK UNIVERSAL UAZAPI
+// Recebe TODOS os tipos de mensagens
+// ─────────────────────────────────────────────────────────────
 app.post("/api/webhook", async (req, res) => {
   try {
     const body = req.body || {};
-    const event = body.event || body.type || body.EventType;
-    const data = body.data || body.message || body;
 
-    // DEBUG: logar estrutura quando NÃO for texto simples
-    const _dbgType = data.messageType || data.type || "";
-    if (_dbgType && !_dbgType.includes("text") && !_dbgType.includes("conversation")) {
-      console.log(`📦 PAYLOAD [${_dbgType}]:`, JSON.stringify(data).slice(0, 500));
+    console.log("\n═══════════════════════════════");
+    console.log("📥 WEBHOOK RECEBIDO");
+    console.log(JSON.stringify(body, null, 2).slice(0, 4000));
+    console.log("═══════════════════════════════\n");
+
+    // Estrutura principal
+    const data =
+      body.data ||
+      body.message ||
+      body.messages ||
+      body.payload ||
+      body;
+
+    // Evento
+    const event =
+      body.event ||
+      body.type ||
+      body.EventType ||
+      data.event ||
+      "message";
+
+    // ID do chat
+    const rawId =
+      data.chatid ||
+      data.chatId ||
+      data.from ||
+      data.sender ||
+      data.phone ||
+      data.number ||
+      "";
+
+    // Nome do contato/grupo
+    const contact =
+      data.groupName ||
+      data.senderName ||
+      data.pushName ||
+      data.notifyName ||
+      data.name ||
+      data.chatName ||
+      rawId;
+
+    // Detecta grupo
+    const isGroup =
+      rawId.includes("@g.us") ||
+      rawId.includes("group");
+
+    // Número limpo
+    const phone = String(rawId)
+      .replace("@s.whatsapp.net", "")
+      .replace("@c.us", "")
+      .replace("@g.us", "");
+
+    // Tipo da mensagem
+    const msgType = (
+      data.messageType ||
+      data.type ||
+      data.mimetype ||
+      "text"
+    ).toLowerCase();
+
+    // Conteúdo
+    const content = data.content || {};
+
+    // Texto principal
+    const text =
+      content.text ||
+      content.caption ||
+      data.text ||
+      data.body ||
+      data.message ||
+      data.conversation ||
+      "";
+
+    // URLs de mídia
+    const mediaUrl =
+      data.mediaUrl ||
+      data.url ||
+      data.fileUrl ||
+      data.audioUrl ||
+      data.videoUrl ||
+      data.imageUrl ||
+      data.documentUrl ||
+      "";
+
+    // Detectores
+    const isAudio =
+      msgType.includes("audio") ||
+      msgType.includes("ptt") ||
+      msgType.includes("voice");
+
+    const isImage =
+      msgType.includes("image") ||
+      msgType.includes("photo");
+
+    const isVideo =
+      msgType.includes("video");
+
+    const isDoc =
+      msgType.includes("document") ||
+      msgType.includes("file");
+
+    const isSticker =
+      msgType.includes("sticker");
+
+    const isLocation =
+      msgType.includes("location");
+
+    const isContact =
+      msgType.includes("contact");
+
+    // Ignorar mensagens enviadas por você
+    const fromMe =
+      data.fromMe ||
+      data.fromme ||
+      data.isFromMe ||
+      false;
+
+    // Texto de exibição
+    let displayText = text;
+
+    if (isAudio) displayText = "🎤 [ÁUDIO]";
+    else if (isImage) displayText = text || "📷 [IMAGEM]";
+    else if (isVideo) displayText = text || "🎥 [VÍDEO]";
+    else if (isDoc) displayText = "📄 [DOCUMENTO]";
+    else if (isSticker) displayText = "😂 [STICKER]";
+    else if (isLocation) displayText = "📍 [LOCALIZAÇÃO]";
+    else if (isContact) displayText = "👤 [CONTATO]";
+
+    // TOKEN / INSTÂNCIA
+    const token =
+      body.token ||
+      body.Token ||
+      data.token ||
+      "";
+
+    const owner =
+      body.owner ||
+      body.Owner ||
+      data.owner ||
+      body.instance ||
+      body.Instance ||
+      "";
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("📌 EVENTO:", event);
+    console.log("📌 TIPO:", msgType);
+    console.log("📌 CONTATO:", contact);
+    console.log("📌 NÚMERO:", phone);
+    console.log("📌 GRUPO:", isGroup);
+    console.log("📌 TEXTO:", displayText);
+    console.log("📌 MÍDIA:", mediaUrl || "Nenhuma");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━");
+
+    // Ignora mensagens próprias
+    if (fromMe) {
+      return res.json({
+        ok: true,
+        ignored: "fromMe"
+      });
     }
 
-    const isMessage = event === "messages" || event === "message" || body.message || data.body || data.text || data.mediaUrl || data.messageType;
+    // IDENTIFICAR CONTA
+    const TOKEN_TO_ACCOUNT = {
+      "4b246ec4-afec-46af-8c9f-39cbabcc9775": 1,
+      "b611340c-989d-4975-9f97-bc937503202f": 2,
+      "a5821f84-85d9-46e4-9212-c1c76e8beb58": 4,
+    };
 
-    if (isMessage) {
-      const rawId = data.chatid || data.phone || data.from || data.sender || data.number || "";
+    const OWNER_TO_ACCOUNT = {
+      "554792285773": 1,
+      "554792189753": 2,
+      "554732125603": 4,
+    };
 
-      // O conteúdo real vem dentro de data.content (estrutura Uazapi)
-      const content = data.content || {};
-      const text = content.text || content.caption || data.body || data.text || data.message || data.conversation || "";
+    let accountId = TOKEN_TO_ACCOUNT[token];
 
-      const fromMe = data.fromMe || data.fromme || data.isFromMe || false;
-      // Nome: groupName para grupos, senderName/pushName para contatos
-      const contact = data.groupName || data.senderName || data.pushName || data.notifyName || data.name || data.chatName || rawId;
-
-      // Identificar conta - tenta vários campos
-      const token = body.token || body.Token || data.token || "";
-      const owner = body.owner || body.Owner || data.owner || body.instance || body.Instance || "";
-
-      // Log para debug de identificação
-      console.log(`🔍 ID fields → token:"${token.slice(0,12)}" owner:"${owner}" base:"${body.BaseUrl || ""}"`);
-
-      // Mapa por número dono (owner) → accountId
-      const OWNER_TO_ACCOUNT = {
-        "554792285773": 1, // confir MEI
-        "554792189753": 2, // Confidence
-        "554732125603": 4, // Pet Family
-      };
-
-      // Tenta identificar por token, depois por owner
-      let accountId = TOKEN_TO_ACCOUNT[token];
-      if (!accountId) {
-        const ownerClean = owner.replace(/\D/g, "");
-        accountId = OWNER_TO_ACCOUNT[ownerClean];
-      }
-      if (!accountId) accountId = 1; // fallback
-
-      // É grupo?
-      const isGroup = rawId.includes("@g.us");
-
-      if (isGroup) {
-        // Registrar grupo na lista (se novo)
-        const groups = loadGroups();
-        if (!groups[rawId]) {
-          groups[rawId] = { name: contact, enabled: false, accountId, lastSeen: new Date().toISOString() };
-          saveGroups(groups);
-          console.log(`👥 Novo grupo detectado: ${contact} (desativado por padrão)`);
-        } else {
-          // Atualizar nome e lastSeen
-          groups[rawId].name = contact;
-          groups[rawId].lastSeen = new Date().toISOString();
-          saveGroups(groups);
-        }
-
-        // Se grupo NÃO está ativado, ignorar a mensagem
-        if (!groups[rawId].enabled) {
-          return res.json({ ok: true, skipped: "grupo desativado" });
-        }
-        // Grupo ativado → continua processando abaixo
-      }
-
-      const phone = rawId.replace("@s.whatsapp.net", "").replace("@c.us", "").replace("@g.us", "");
-
-      // Detectar tipo de mídia
-      const msgType = (data.messageType || data.type || "text").toLowerCase();
-      const mediaUrl = data.mediaUrl || data.url || data.fileUrl || data.audioUrl || data.imageUrl || data.documentUrl || "";
-      const isAudio = msgType.includes("audio") || msgType.includes("ptt") || msgType.includes("voice");
-      const isImage = msgType.includes("image") || msgType.includes("photo");
-      const isDoc = msgType.includes("document") || msgType.includes("file");
-
-      let displayText = text;
-      if (isAudio) displayText = "🎤 [Áudio]";
-      else if (isImage) displayText = caption_(data) || "📷 [Imagem]";
-      else if (isDoc) displayText = "📄 [Documento]";
-
-      if (!fromMe && (text || mediaUrl)) {
-        console.log(`🔔 [Conta ${accountId}]${isGroup ? " [GRUPO]" : ""} ${contact}: ${displayText.slice(0, 40)}`);
-        const classified = await classifyMsg(contact, text || displayText);
-        io.emit("new_message", {
-          accountId, phone, contact,
-          message: displayText,
-          mediaUrl, msgType, isAudio, isImage, isDoc,
-          isGroup,
-          lane: classified.lane, reason: classified.reason,
-          time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-        });
-      }
+    if (!accountId) {
+      const ownerClean = String(owner).replace(/\D/g, "");
+      accountId = OWNER_TO_ACCOUNT[ownerClean];
     }
+
+    if (!accountId) accountId = 1;
+
+    // Emitir no frontend
+    io.emit("new_message", {
+      accountId,
+      phone,
+      contact,
+      message: displayText,
+      originalText: text,
+
+      mediaUrl,
+      msgType,
+
+      isAudio,
+      isImage,
+      isVideo,
+      isDoc,
+      isSticker,
+      isLocation,
+      isContact,
+      isGroup,
+
+      event,
+
+      time: new Date().toLocaleTimeString(
+        "pt-BR",
+        {
+          hour: "2-digit",
+          minute: "2-digit"
+        }
+      ),
+    });
+
+    return res.json({
+      ok: true,
+      received: true,
+      type: msgType
+    });
+
   } catch (err) {
-    console.error("❌ Erro webhook:", err.message);
-  }
-  res.json({ ok: true });
-});
+    console.error("❌ ERRO WEBHOOK:", err);
 
-// Aceitar a rota alternativa que a Uazapi usa
-app.post("/api/webhook/messages/text", (req, res) => res.json({ ok: true }));
-app.post("/api/webhook/*", (req, res) => res.json({ ok: true }));
+    return res.status(500).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+```
+
 
 // ── Classify ──────────────────────────────────────────────────────────────────
 async function classifyMsg(contact, message) {
