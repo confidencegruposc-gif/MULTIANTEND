@@ -207,17 +207,19 @@ function MainApp({ onLogout }) {
     const socket = io(window.location.origin, { transports: ["websocket", "polling"], reconnection: true });
     socket.on("connect", () => toast_("🔌 Tempo real ativo"));
     socket.on("new_message", (msg) => {
+      const aId = msg.accountId || 1;
       setConvs((p) => {
-        const ex = p.find((c) => c.phone === msg.phone);
+        // Agrupar por CONTA + telefone (mesma pessoa em contas diferentes = conversas separadas)
+        const ex = p.find((c) => c.phone === msg.phone && c.accountId === aId);
         if (ex) {
-          return p.map((c) => c.phone === msg.phone ? {
+          return p.map((c) => (c.phone === msg.phone && c.accountId === aId) ? {
             ...c, lastMsg: msg.message, time: msg.time, unread: c.unread + 1,
             lane: msg.lane, aiReason: msg.reason,
             messages: [...(c.messages || []), { from: "contact", text: msg.message, time: msg.time }],
           } : c);
         }
         return [{
-          id: ++uid, accountId: msg.accountId || 1, contact: msg.contact, phone: msg.phone,
+          id: ++uid, accountId: aId, contact: msg.contact, phone: msg.phone,
           lastMsg: msg.message, time: msg.time, unread: 1, lane: msg.lane, aiReason: msg.reason,
           messages: [{ from: "contact", text: msg.message, time: msg.time }],
         }, ...p];
@@ -284,6 +286,10 @@ function MainApp({ onLogout }) {
               }}>{m.icon} {m.label}</button>
             ))}
           </div>
+          <button onClick={() => { if(confirm("Limpar TODAS as conversas? (as contas e grupos continuam salvos)")) { setConvs([]); toast_("🗑️ Conversas limpas"); } }} title="Limpar conversas" style={{
+            background: "rgba(255,255,255,0.15)", color: "white", border: "none",
+            padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
+          }}>🗑️</button>
           <button onClick={() => setShowGroups(true)} title="Grupos" style={{
             background: "rgba(255,255,255,0.15)", color: "white", border: "none",
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
