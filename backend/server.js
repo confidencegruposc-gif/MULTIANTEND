@@ -144,7 +144,13 @@ app.post("/api/webhook", async (req, res) => {
     const event = body.event || body.type || body.EventType;
     const data = body.data || body.message || body;
 
-    const isMessage = event === "messages" || event === "message" || body.message || data.body || data.text;
+    // DEBUG: logar estrutura quando NÃO for texto simples
+    const _dbgType = data.messageType || data.type || "";
+    if (_dbgType && !_dbgType.includes("text") && !_dbgType.includes("conversation")) {
+      console.log(`📦 PAYLOAD [${_dbgType}]:`, JSON.stringify(data).slice(0, 500));
+    }
+
+    const isMessage = event === "messages" || event === "message" || body.message || data.body || data.text || data.mediaUrl || data.messageType;
 
     if (isMessage) {
       const rawId = data.chatid || data.phone || data.from || data.sender || data.number || "";
@@ -201,11 +207,11 @@ app.post("/api/webhook", async (req, res) => {
       const phone = rawId.replace("@s.whatsapp.net", "").replace("@c.us", "").replace("@g.us", "");
 
       // Detectar tipo de mídia
-      const msgType = data.messageType || data.type || "text";
-      const mediaUrl = data.mediaUrl || data.url || data.fileUrl || "";
-      const isAudio = msgType.includes("audio") || msgType.includes("ptt");
-      const isImage = msgType.includes("image");
-      const isDoc = msgType.includes("document");
+      const msgType = (data.messageType || data.type || "text").toLowerCase();
+      const mediaUrl = data.mediaUrl || data.url || data.fileUrl || data.audioUrl || data.imageUrl || data.documentUrl || "";
+      const isAudio = msgType.includes("audio") || msgType.includes("ptt") || msgType.includes("voice");
+      const isImage = msgType.includes("image") || msgType.includes("photo");
+      const isDoc = msgType.includes("document") || msgType.includes("file");
 
       let displayText = text;
       if (isAudio) displayText = "🎤 [Áudio]";
