@@ -208,20 +208,23 @@ function MainApp({ onLogout }) {
     socket.on("connect", () => toast_("🔌 Tempo real ativo"));
     socket.on("new_message", (msg) => {
       const aId = msg.accountId || 1;
+      const newMsg = {
+        from: "contact", text: msg.message, time: msg.time,
+        mediaUrl: msg.mediaUrl, isImage: msg.isImage, isAudio: msg.isAudio, isDoc: msg.isDoc,
+      };
       setConvs((p) => {
-        // Agrupar por CONTA + telefone (mesma pessoa em contas diferentes = conversas separadas)
         const ex = p.find((c) => c.phone === msg.phone && c.accountId === aId);
         if (ex) {
           return p.map((c) => (c.phone === msg.phone && c.accountId === aId) ? {
             ...c, lastMsg: msg.message, time: msg.time, unread: c.unread + 1,
             lane: msg.lane, aiReason: msg.reason,
-            messages: [...(c.messages || []), { from: "contact", text: msg.message, time: msg.time }],
+            messages: [...(c.messages || []), newMsg],
           } : c);
         }
         return [{
           id: ++uid, accountId: aId, contact: msg.contact, phone: msg.phone,
           lastMsg: msg.message, time: msg.time, unread: 1, lane: msg.lane, aiReason: msg.reason,
-          messages: [{ from: "contact", text: msg.message, time: msg.time }],
+          messages: [newMsg],
         }, ...p];
       });
     });
@@ -352,10 +355,12 @@ function MainApp({ onLogout }) {
         {view === "porconta" && <PorContaView convs={convs} accounts={accounts} collapsed={collapsed} onToggleCollapse={(id) => setCollapsed((p) => ({ ...p, [id]: !p[id] }))} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} onSync={syncAccount} onSetup={setSetupAcc} />}
       </div>
 
-      {openChat && <ChatModal conv={openChat} accounts={accounts} toast_={toast_} onClose={() => setOpenChat(null)} onMove={moveTo} onSend={(text) => {
-        setConvs((p) => p.map((c) => c.id === openChat.id ? { ...c, lastMsg: text, time: timeNow(), messages: [...(c.messages || []), { from: "me", text, time: timeNow() }] } : c));
-        setOpenChat((p) => ({ ...p, messages: [...(p.messages || []), { from: "me", text, time: timeNow() }] }));
-      }} />}
+      {openChat && (() => {
+        const liveConv = convs.find((c) => c.id === openChat.id) || openChat;
+        return <ChatModal conv={liveConv} accounts={accounts} toast_={toast_} onClose={() => setOpenChat(null)} onMove={moveTo} onSend={(text) => {
+          setConvs((p) => p.map((c) => c.id === openChat.id ? { ...c, lastMsg: text, time: timeNow(), messages: [...(c.messages || []), { from: "me", text, time: timeNow() }] } : c));
+        }} />;
+      })()}
 
       {setupAcc && <SetupModal account={setupAcc} accounts={accounts} onClose={() => setSetupAcc(null)} onSave={(u) => { setAccounts((p) => p.map((a) => a.id === u.id ? u : a)); toast_(`✅ ${u.name} salvo no servidor`); setSetupAcc(null); }} onSwitch={setSetupAcc} />}
 
