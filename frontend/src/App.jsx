@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 
-// ─── CONTAS ──────────────────────────────────────────────────────────────────
-const INITIAL_ACCOUNTS = [
+// ─── CONTAS PADRÃO ───────────────────────────────────────────────────────────
+const DEFAULT_ACCOUNTS = [
   { id:1, name:"confir MEI", color:"#7c3aed", colorLight:"#faf5ff", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
   { id:2, name:"Confidence Contabilidade", color:"#0ea5e9", colorLight:"#eff6ff", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
   { id:3, name:"Pessoal Odilei", color:"#f59e0b", colorLight:"#fffbeb", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
@@ -20,15 +20,140 @@ let uid = 1000;
 const timeNow = () => new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 const getInitials = (n) => !n ? "??" : n.split(" ").map(x => x[0]).slice(0,2).join("").toUpperCase();
 
+// ─── API HELPER ──────────────────────────────────────────────────────────────
+async function api(path, options = {}) {
+  const token = localStorage.getItem("multiatend_token");
+  const r = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+  if (r.status === 401) {
+    localStorage.removeItem("multiatend_token");
+    window.location.reload();
+  }
+  return r;
+}
+
+// ─── COMPONENTE PRINCIPAL ────────────────────────────────────────────────────
 export default function App() {
-  const [accounts, setAccounts] = useState(() => {
-    const s = localStorage.getItem("multiatend_accounts");
-    return s ? JSON.parse(s) : INITIAL_ACCOUNTS;
-  });
-  const [convs, setConvs] = useState(() => {
-    const s = localStorage.getItem("multiatend_convs");
-    return s ? JSON.parse(s) : [];
-  });
+  const [token, setToken] = useState(localStorage.getItem("multiatend_token"));
+
+  if (!token) {
+    return <LoginScreen onLogin={(t) => { localStorage.setItem("multiatend_token", t); setToken(t); }} />;
+  }
+
+  return <MainApp onLogout={() => { localStorage.removeItem("multiatend_token"); setToken(null); }} />;
+}
+
+// ─── TELA DE LOGIN ───────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleLogin(e) {
+    e?.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const r = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        onLogin(data.token);
+      } else {
+        setError("Senha incorreta");
+      }
+    } catch {
+      setError("Erro de conexão");
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "linear-gradient(135deg, #075E54 0%, #128C7E 100%)",
+      fontFamily: "system-ui, sans-serif",
+    }}>
+      <div style={{
+        background: "white",
+        padding: 40,
+        borderRadius: 16,
+        boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+        width: "90%",
+        maxWidth: 400,
+      }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>💬</div>
+          <h1 style={{ margin: 0, fontSize: 24, color: "#075E54" }}>MultiAtend</h1>
+          <p style={{ margin: 0, color: "#666", fontSize: 13, marginTop: 4 }}>WhatsApp Manager com IA</p>
+        </div>
+
+        <form onSubmit={handleLogin}>
+          <label style={{ display: "block", fontSize: 13, color: "#666", marginBottom: 6 }}>
+            Senha de acesso
+          </label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Digite a senha"
+            autoFocus
+            style={{
+              width: "100%",
+              padding: "12px 14px",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              fontSize: 14,
+              outline: "none",
+              boxSizing: "border-box",
+              marginBottom: 16,
+            }}
+          />
+          {error && (
+            <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12, textAlign: "center" }}>
+              {error}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={loading || !password}
+            style={{
+              width: "100%",
+              background: "#25D366",
+              color: "white",
+              border: "none",
+              padding: "12px",
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: loading ? "wait" : "pointer",
+              opacity: loading || !password ? 0.6 : 1,
+            }}
+          >
+            {loading ? "Entrando..." : "Entrar"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── APP PRINCIPAL ───────────────────────────────────────────────────────────
+function MainApp({ onLogout }) {
+  const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS);
+  const [convs, setConvs] = useState([]);
   const [view, setView] = useState("lista");
   const [filterAccount, setFilterAccount] = useState("todas");
   const [filterLane, setFilterLane] = useState("todas");
@@ -36,12 +161,47 @@ export default function App() {
   const [setupAcc, setSetupAcc] = useState(null);
   const [toast, setToast] = useState("");
   const [collapsed, setCollapsed] = useState({});
-
-  useEffect(() => localStorage.setItem("multiatend_accounts", JSON.stringify(accounts)), [accounts]);
-  useEffect(() => localStorage.setItem("multiatend_convs", JSON.stringify(convs)), [convs]);
+  const [loaded, setLoaded] = useState(false);
 
   const toast_ = (m) => { setToast(m); setTimeout(() => setToast(""), 3000); };
 
+  // ─── Carrega config do servidor ────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api("/api/config");
+        if (r.ok) {
+          const data = await r.json();
+          if (data.accounts && data.accounts.length > 0) {
+            setAccounts(data.accounts);
+          }
+          if (data.convs) setConvs(data.convs);
+          toast_("✅ Configuração carregada");
+        }
+      } catch {
+        toast_("⚠️ Erro ao carregar config");
+      }
+      setLoaded(true);
+    })();
+  }, []);
+
+  // ─── Salva config no servidor (com debounce) ───────────────────────────────
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(async () => {
+      try {
+        await api("/api/config", {
+          method: "POST",
+          body: JSON.stringify({ accounts, convs }),
+        });
+      } catch (e) {
+        console.error("Erro ao salvar:", e);
+      }
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [accounts, convs, loaded]);
+
+  // ─── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const socket = io(window.location.origin, { transports: ["websocket", "polling"], reconnection: true });
     socket.on("connect", () => toast_("🔌 Tempo real ativo"));
@@ -89,6 +249,15 @@ export default function App() {
     return a;
   }, {});
 
+  if (!loaded) {
+    return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f0f2f5" }}>
+      <div style={{ textAlign: "center", color: "#666" }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+        Carregando configurações...
+      </div>
+    </div>;
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "#f0f2f5", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       <header style={{ background: "#075E54", color: "white", padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -99,19 +268,25 @@ export default function App() {
             <div style={{ fontSize: 11, opacity: 0.85 }}>{accounts.filter((a) => a.enabled).length} conta(s) · {convs.length} conversa(s)</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.15)", padding: 4, borderRadius: 8 }}>
-          {[
-            { id: "lista", label: "Lista", icon: "📋" },
-            { id: "kanban", label: "Kanban", icon: "📊" },
-            { id: "porconta", label: "Por Conta", icon: "📦" },
-          ].map((m) => (
-            <button key={m.id} onClick={() => setView(m.id)} style={{
-              background: view === m.id ? "white" : "transparent",
-              color: view === m.id ? "#075E54" : "white",
-              border: "none", padding: "6px 12px", fontSize: 12, borderRadius: 6, cursor: "pointer",
-              fontWeight: view === m.id ? 600 : 400, transition: "all 0.2s",
-            }}>{m.icon} {m.label}</button>
-          ))}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 4, background: "rgba(255,255,255,0.15)", padding: 4, borderRadius: 8 }}>
+            {[
+              { id: "lista", label: "Lista", icon: "📋" },
+              { id: "kanban", label: "Kanban", icon: "📊" },
+              { id: "porconta", label: "Por Conta", icon: "📦" },
+            ].map((m) => (
+              <button key={m.id} onClick={() => setView(m.id)} style={{
+                background: view === m.id ? "white" : "transparent",
+                color: view === m.id ? "#075E54" : "white",
+                border: "none", padding: "6px 12px", fontSize: 12, borderRadius: 6, cursor: "pointer",
+                fontWeight: view === m.id ? 600 : 400, transition: "all 0.2s",
+              }}>{m.icon} {m.label}</button>
+            ))}
+          </div>
+          <button onClick={onLogout} title="Sair" style={{
+            background: "rgba(255,255,255,0.15)", color: "white", border: "none",
+            padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
+          }}>🚪 Sair</button>
         </div>
       </header>
 
@@ -161,9 +336,9 @@ export default function App() {
       </div>
 
       <div style={{ padding: 16 }}>
-        {view === "lista" && <ListaView convs={filteredConvs} accounts={accounts} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} onMove={moveTo} />}
-        {view === "kanban" && <KanbanView convs={filteredConvs} accounts={accounts} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} onMove={moveTo} />}
-        {view === "porconta" && <PorContaView convs={convs} accounts={accounts} collapsed={collapsed} onToggleCollapse={(id) => setCollapsed((p) => ({ ...p, [id]: !p[id] }))} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} onMove={moveTo} onSync={syncAccount} onSetup={setSetupAcc} />}
+        {view === "lista" && <ListaView convs={filteredConvs} accounts={accounts} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} />}
+        {view === "kanban" && <KanbanView convs={filteredConvs} accounts={accounts} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} />}
+        {view === "porconta" && <PorContaView convs={convs} accounts={accounts} collapsed={collapsed} onToggleCollapse={(id) => setCollapsed((p) => ({ ...p, [id]: !p[id] }))} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} onSync={syncAccount} onSetup={setSetupAcc} />}
       </div>
 
       {openChat && <ChatModal conv={openChat} accounts={accounts} onClose={() => setOpenChat(null)} onMove={moveTo} onSend={(text) => {
@@ -171,7 +346,7 @@ export default function App() {
         setOpenChat((p) => ({ ...p, messages: [...(p.messages || []), { from: "me", text, time: timeNow() }] }));
       }} />}
 
-      {setupAcc && <SetupModal account={setupAcc} accounts={accounts} onClose={() => setSetupAcc(null)} onSave={(u) => { setAccounts((p) => p.map((a) => a.id === u.id ? u : a)); toast_(`✅ ${u.name} salvo`); setSetupAcc(null); }} onSwitch={setSetupAcc} />}
+      {setupAcc && <SetupModal account={setupAcc} accounts={accounts} onClose={() => setSetupAcc(null)} onSave={(u) => { setAccounts((p) => p.map((a) => a.id === u.id ? u : a)); toast_(`✅ ${u.name} salvo no servidor`); setSetupAcc(null); }} onSwitch={setSetupAcc} />}
 
       {toast && <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#333", color: "white", padding: "10px 20px", borderRadius: 8, fontSize: 13, zIndex: 9999 }}>{toast}</div>}
     </div>
@@ -350,7 +525,7 @@ function SetupModal({ account, accounts, onClose, onSave, onSwitch }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", width: "90%", maxWidth: 500, borderRadius: 12, overflow: "hidden" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", width: "90%", maxWidth: 500, borderRadius: 12, overflow: "hidden", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         <div style={{ background: form.color, color: "white", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 16 }}>Configurar Conta</div>
@@ -368,7 +543,10 @@ function SetupModal({ account, accounts, onClose, onSave, onSwitch }) {
             }}>{a.name}</button>
           ))}
         </div>
-        <div style={{ padding: 20 }}>
+        <div style={{ padding: 20, overflowY: "auto", flex: 1 }}>
+          <div style={{ background: "#e8f5e9", padding: 10, borderRadius: 6, fontSize: 12, color: "#2e7d32", marginBottom: 16 }}>
+            💾 As configurações são salvas <strong>no servidor</strong> e persistem entre dispositivos!
+          </div>
           <Field label="Nome da Conta" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
           <Field label="Gerenciador / Responsável" value={form.gerenciador} onChange={(v) => setForm({ ...form, gerenciador: v })} placeholder="Ex: Odilei" />
           <Field label="URL Uazapi (base)" value={form.baseUrl} onChange={(v) => setForm({ ...form, baseUrl: v })} placeholder="https://sua-instancia.uazapi.com" />
@@ -382,7 +560,7 @@ function SetupModal({ account, accounts, onClose, onSave, onSwitch }) {
         </div>
         <div style={{ padding: 16, borderTop: "1px solid #eee", display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{ background: "white", border: "1px solid #ddd", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>Cancelar</button>
-          <button onClick={() => onSave(form)} style={{ background: form.color, color: "white", border: "none", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Salvar</button>
+          <button onClick={() => onSave(form)} style={{ background: form.color, color: "white", border: "none", padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>💾 Salvar</button>
         </div>
       </div>
     </div>
@@ -394,7 +572,7 @@ function Field({ label, value, onChange, placeholder }) {
     <div style={{ marginBottom: 12 }}>
       <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>{label}</label>
       <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{
-        width: "100%", padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, outline: "none",
+        width: "100%", padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box",
       }} />
     </div>
   );
