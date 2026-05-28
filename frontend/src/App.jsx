@@ -160,6 +160,7 @@ function MainApp({ onLogout }) {
   const [openChat, setOpenChat] = useState(null);
   const [setupAcc, setSetupAcc] = useState(null);
   const [showGroups, setShowGroups] = useState(false);
+  const [modoGrupos, setModoGrupos] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [tickets, setTickets] = useState([]);
   const [showTickets, setShowTickets] = useState(false);
