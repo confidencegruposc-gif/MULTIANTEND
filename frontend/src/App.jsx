@@ -352,7 +352,7 @@ function MainApp({ onLogout }) {
         {view === "porconta" && <PorContaView convs={convs} accounts={accounts} collapsed={collapsed} onToggleCollapse={(id) => setCollapsed((p) => ({ ...p, [id]: !p[id] }))} onOpen={(c) => { setOpenChat(c); markRead(c.id); }} onSync={syncAccount} onSetup={setSetupAcc} />}
       </div>
 
-      {openChat && <ChatModal conv={openChat} accounts={accounts} onClose={() => setOpenChat(null)} onMove={moveTo} onSend={(text) => {
+      {openChat && <ChatModal conv={openChat} accounts={accounts} toast_={toast_} onClose={() => setOpenChat(null)} onMove={moveTo} onSend={(text) => {
         setConvs((p) => p.map((c) => c.id === openChat.id ? { ...c, lastMsg: text, time: timeNow(), messages: [...(c.messages || []), { from: "me", text, time: timeNow() }] } : c));
         setOpenChat((p) => ({ ...p, messages: [...(p.messages || []), { from: "me", text, time: timeNow() }] }));
       }} />}
@@ -485,23 +485,114 @@ function PorContaView({ convs, accounts, collapsed, onToggleCollapse, onOpen, on
   );
 }
 
-function ChatModal({ conv, accounts, onClose, onMove, onSend }) {
+function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_ }) {
   const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [summary, setSummary] = useState("");
+  const [showQuick, setShowQuick] = useState(false);
   const acc = accounts.find((a) => a.id === conv.accountId) || accounts[0];
   const msgsEnd = useRef(null);
+  const fileInputRef = useRef(null);
+  const imgInputRef = useRef(null);
+
   useEffect(() => msgsEnd.current?.scrollIntoView({ behavior: "smooth" }), [conv.messages]);
+
+  const QUICK_REPLIES = [
+    "Olá! Como posso ajudar? 😊",
+    "Obrigado pelo contato! Já vou verificar.",
+    "Pode me enviar mais detalhes, por favor?",
+    "Seu atendimento foi registrado! 👍",
+    "Em breve retornarei com a resposta.",
+  ];
+
+  // Enviar texto real via API
+  async function sendReal(msgText, type = "text", fileData = null, fname = null) {
+    setSending(true);
+    try {
+      const r = await api("/api/send", {
+        method: "POST",
+        body: JSON.stringify({
+          accountId: conv.accountId,
+          phone: conv.phone,
+          type,
+          text: msgText,
+          file: fileData,
+          filename: fname,
+        }),
+      });
+      const data = await r.json();
+      if (data.ok) {
+        onSend(type === "text" ? msgText : `[${type === "image" ? "📷 Imagem" : type === "audio" ? "🎤 Áudio" : "📄 " + (fname || "Arquivo")}]`);
+        toast_("✅ Enviado!");
+      } else {
+        toast_("❌ Erro ao enviar");
+      }
+    } catch {
+      toast_("❌ Erro de conexão");
+    }
+    setSending(false);
+  }
+
+  // Upload de arquivo → base64
+  function handleFile(e, type) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(",")[1];
+      sendReal(text, type, base64, file.name);
+      setText("");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Gerar resumo
+  async function genSummary() {
+    toast_("🤖 Gerando resumo...");
+    try {
+      const r = await api("/api/summary", {
+        method: "POST",
+        body: JSON.stringify({ messages: conv.messages || [] }),
+      });
+      const data = await r.json();
+      setSummary(data.summary || "Sem resumo");
+    } catch {
+      toast_("❌ Erro ao resumir");
+    }
+  }
+
+  // Transcrever áudio
+  async function transcribe(audioUrl) {
+    toast_("🤖 Transcrevendo...");
+    try {
+      const r = await api("/api/transcribe", {
+        method: "POST",
+        body: JSON.stringify({ audioUrl }),
+      });
+      const data = await r.json();
+      toast_("✅ Transcrito!");
+      return data.text;
+    } catch {
+      toast_("❌ Erro ao transcrever");
+      return "";
+    }
+  }
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#e5ddd5", width: "90%", maxWidth: 500, height: "80vh", borderRadius: 12, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#e5ddd5", width: "90%", maxWidth: 520, height: "85vh", borderRadius: 12, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Header */}
         <div style={{ background: "#075E54", color: "white", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: "50%", background: acc.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: 14 }}>{getInitials(conv.contact)}</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600 }}>{conv.contact}</div>
             <div style={{ fontSize: 11, opacity: 0.85 }}>{conv.phone} · {acc.name}</div>
           </div>
+          <button onClick={genSummary} title="Resumo IA" style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "white", padding: "6px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer", marginRight: 4 }}>🤖 Resumo</button>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: "white", fontSize: 20, cursor: "pointer" }}>✕</button>
         </div>
+
+        {/* Lanes */}
         <div style={{ padding: 8, background: "white", borderBottom: "1px solid #ddd", display: "flex", gap: 4, overflowX: "auto" }}>
           {LANES.map((lane) => (
             <button key={lane.id} onClick={() => onMove(conv.id, lane.id)} style={{
@@ -512,10 +603,30 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend }) {
             }}>{lane.icon} {lane.label}</button>
           ))}
         </div>
+
+        {/* Resumo (se houver) */}
+        {summary && (
+          <div style={{ background: "#fff8e1", padding: "10px 16px", borderBottom: "1px solid #ffe082", fontSize: 12, color: "#5d4037" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <strong>🤖 Resumo da conversa:</strong>
+              <button onClick={() => setSummary("")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✕</button>
+            </div>
+            {summary}
+          </div>
+        )}
+
+        {/* Mensagens */}
         <div style={{ flex: 1, padding: 16, overflowY: "auto", background: "#e5ddd5" }}>
           {(conv.messages || []).map((m, i) => (
             <div key={i} style={{ display: "flex", justifyContent: m.from === "me" ? "flex-end" : "flex-start", marginBottom: 8 }}>
               <div style={{ background: m.from === "me" ? "#dcf8c6" : "white", padding: "8px 12px", borderRadius: 8, maxWidth: "75%", fontSize: 13, boxShadow: "0 1px 1px rgba(0,0,0,0.1)" }}>
+                {m.mediaUrl && m.isImage && <img src={m.mediaUrl} alt="" style={{ maxWidth: "100%", borderRadius: 6, marginBottom: 4 }} />}
+                {m.mediaUrl && m.isAudio && (
+                  <div>
+                    <audio controls src={m.mediaUrl} style={{ maxWidth: 200, height: 32 }} />
+                    <button onClick={async () => { const t = await transcribe(m.mediaUrl); if(t) alert("Transcrição:\n\n" + t); }} style={{ display: "block", marginTop: 4, background: "#075E54", color: "white", border: "none", padding: "3px 8px", borderRadius: 4, fontSize: 10, cursor: "pointer" }}>🎤 Transcrever</button>
+                  </div>
+                )}
                 <div>{m.text}</div>
                 <div style={{ fontSize: 10, color: "#888", textAlign: "right", marginTop: 2 }}>{m.time}</div>
               </div>
@@ -523,9 +634,25 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend }) {
           ))}
           <div ref={msgsEnd}></div>
         </div>
-        <div style={{ padding: 10, background: "#f0f0f0", display: "flex", gap: 8 }}>
-          <input type="text" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && text.trim()) { onSend(text); setText(""); } }} placeholder="Digite uma mensagem..." style={{ flex: 1, padding: "10px 14px", border: "none", borderRadius: 20, fontSize: 13, outline: "none" }} />
-          <button onClick={() => { if (text.trim()) { onSend(text); setText(""); } }} style={{ background: "#25D366", color: "white", border: "none", padding: "10px 16px", borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Enviar</button>
+
+        {/* Respostas rápidas */}
+        {showQuick && (
+          <div style={{ background: "white", borderTop: "1px solid #ddd", padding: 8, maxHeight: 150, overflowY: "auto" }}>
+            {QUICK_REPLIES.map((q, i) => (
+              <div key={i} onClick={() => { sendReal(q); setShowQuick(false); }} style={{ padding: "8px 12px", borderRadius: 6, cursor: "pointer", fontSize: 13, marginBottom: 4, background: "#f5f5f5" }}>{q}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Input */}
+        <div style={{ padding: 10, background: "#f0f0f0", display: "flex", gap: 6, alignItems: "center" }}>
+          <button onClick={() => setShowQuick(!showQuick)} title="Respostas rápidas" style={{ background: showQuick ? "#25D366" : "white", color: showQuick ? "white" : "#666", border: "1px solid #ddd", width: 38, height: 38, borderRadius: "50%", cursor: "pointer", fontSize: 16 }}>⚡</button>
+          <button onClick={() => imgInputRef.current?.click()} title="Imagem" style={{ background: "white", border: "1px solid #ddd", width: 38, height: 38, borderRadius: "50%", cursor: "pointer", fontSize: 16 }}>📷</button>
+          <button onClick={() => fileInputRef.current?.click()} title="Arquivo" style={{ background: "white", border: "1px solid #ddd", width: 38, height: 38, borderRadius: "50%", cursor: "pointer", fontSize: 16 }}>📎</button>
+          <input ref={imgInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handleFile(e, "image")} />
+          <input ref={fileInputRef} type="file" style={{ display: "none" }} onChange={(e) => handleFile(e, "document")} />
+          <input type="text" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && text.trim() && !sending) { sendReal(text); setText(""); } }} placeholder="Digite uma mensagem..." style={{ flex: 1, padding: "10px 14px", border: "none", borderRadius: 20, fontSize: 13, outline: "none" }} />
+          <button onClick={() => { if (text.trim() && !sending) { sendReal(text); setText(""); } }} disabled={sending} style={{ background: sending ? "#aaa" : "#25D366", color: "white", border: "none", padding: "10px 16px", borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: sending ? "wait" : "pointer" }}>{sending ? "..." : "Enviar"}</button>
         </div>
       </div>
     </div>
