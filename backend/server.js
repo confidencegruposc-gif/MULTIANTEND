@@ -60,17 +60,6 @@ function saveConfig(data) {
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "5mb" }));
 
-// ── LOG TODAS AS REQUISIÇÕES (debug) ──────────────────────────────────────────
-app.use((req, res, next) => {
-  if (!req.path.startsWith("/assets") && req.path !== "/" && !req.path.includes("favicon")) {
-    console.log(`📥 [${req.method}] ${req.path} | from: ${req.headers["user-agent"]?.slice(0,30) || "?"}`);
-    if (req.method === "POST" && req.body && Object.keys(req.body).length > 0) {
-      console.log(`   📦 Body: ${JSON.stringify(req.body).slice(0, 200)}`);
-    }
-  }
-  next();
-});
-
 // ── AUTENTICAÇÃO POR SENHA ────────────────────────────────────────────────────
 const APP_PASSWORD = process.env.APP_PASSWORD || "multiatend2026";
 
@@ -113,50 +102,61 @@ app.post("/api/config", requireAuth, (req, res) => {
   else res.status(500).json({ error: "Erro ao salvar" });
 });
 
+// ── Mapa de tokens → accountId ────────────────────────────────────────────────
+const TOKEN_TO_ACCOUNT = {
+  "4b246ec4-afec-46af-8c9f-39cbabcc9775": 1, // confir MEI
+  "b611340c-989d-4975-9f97-bc937503202f": 2, // Confidence
+  "a5821f84-85d9-46e4-9212-c1c76e8beb58": 4, // Pet Family
+};
+
 // ── Webhook ───────────────────────────────────────────────────────────────────
 app.post("/api/webhook", async (req, res) => {
-  console.log("🔔 WEBHOOK RECEBIDO!");
-  console.log("   Payload:", JSON.stringify(req.body).slice(0, 500));
-
   try {
     const body = req.body || {};
-    // Uazapi pode mandar em formatos diferentes
     const event = body.event || body.type || body.EventType;
     const data = body.data || body.message || body;
 
-    // Detectar se é mensagem
     const isMessage = event === "messages" || event === "message" || body.message || data.body || data.text;
 
     if (isMessage) {
-      // Extrair campos (vários formatos possíveis)
-      const phone = data.phone || data.chatid || data.from || data.sender || data.number || "desconhecido";
+      // Extrair campos
+      const rawId = data.chatid || data.phone || data.from || data.sender || data.number || "";
       const text = data.body || data.text || data.message || data.content || data.conversation || "";
       const fromMe = data.fromMe || data.fromme || data.isFromMe || false;
-      const contact = data.senderName || data.pushName || data.notifyName || data.name || phone;
+      const contact = data.senderName || data.pushName || data.notifyName || data.name || rawId;
 
-      console.log(`   📱 De: ${contact} (${phone}) | fromMe: ${fromMe}`);
-      console.log(`   💬 Texto: ${text}`);
+      // FILTRAR GRUPOS (@g.us)
+      const isGroup = rawId.includes("@g.us") || rawId.includes("-");
+      if (isGroup) {
+        return res.json({ ok: true, skipped: "grupo" });
+      }
 
-      if (!fromMe && text) {
+      // Identificar conta pelo token
+      const token = body.token || body.Token || data.token || "";
+      const accountId = TOKEN_TO_ACCOUNT[token] || 1;
+
+      // Limpar telefone
+      const phone = rawId.replace("@s.whatsapp.net", "").replace("@c.us", "");
+
+      if (!fromMe && text && !text.startsWith("http")) {
+        console.log(`🔔 [Conta ${accountId}] ${contact}: ${text.slice(0, 40)}`);
         const classified = await classifyMsg(contact, text);
         io.emit("new_message", {
-          phone, contact, message: text,
+          accountId, phone, contact, message: text,
           lane: classified.lane, reason: classified.reason,
           time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
         });
-        console.log(`   ✅ Enviado pro app: ${contact} → ${classified.lane}`);
-      } else {
-        console.log(`   ⏭️ Ignorado (fromMe=${fromMe} ou texto vazio)`);
       }
-    } else {
-      console.log(`   ⏭️ Evento não é mensagem: ${event}`);
     }
   } catch (err) {
-    console.error("   ❌ Erro no webhook:", err.message);
+    console.error("❌ Erro webhook:", err.message);
   }
-
   res.json({ ok: true });
 });
+
+// Aceitar a rota alternativa que a Uazapi usa
+app.post("/api/webhook/messages/text", (req, res) => res.json({ ok: true }));
+app.post("/api/webhook/*", (req, res) => res.json({ ok: true }));
 
 // ── Classify ──────────────────────────────────────────────────────────────────
 async function classifyMsg(contact, message) {
