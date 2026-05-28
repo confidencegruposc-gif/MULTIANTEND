@@ -201,7 +201,7 @@ console.log(
 
 io.emit("new_message", {
         accountId,
-        phone,
+       phone: isGroup ? rawId : phone,
         contact,
 
         isGroup,
