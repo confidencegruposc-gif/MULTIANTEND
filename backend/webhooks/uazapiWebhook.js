@@ -190,13 +190,17 @@ function registrarWebhookUazapi(app, io, deps = {}) {
         saveGroups(groups);
       }
 
-      const classified = await classifyMsg(contact, text || displayText);
+    const classified = await classifyMsg(contact, text || displayText);
 
-      console.log(
-        `[Conta ${accountId}] ${isGroup ? "[GRUPO]" : "[CLIENTE]"} ${contact}: ${displayText}`
-      );
+console.log(
+  "[CONTA]",
+  accountId,
+  isGroup ? "[GRUPO]" : "[CLIENTE]",
+  contact,
+  displayText
+);
 
-      io.emit("new_message", {
+io.emit("new_message", {
         accountId,
         phone,
         contact,
