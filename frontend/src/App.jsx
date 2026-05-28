@@ -926,7 +926,9 @@ function GroupsModal({ accounts, onClose, toast_, groupsFromConvs = [], onOpenGr
                     fontSize: 18, flexShrink: 0,
                   }}>👥</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{g.name}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+  {g.name || g.contact}
+</div>
                     <div style={{ fontSize: 11, color: "#888" }}>
                       <span style={{ background: acc.color, color: "white", padding: "1px 6px", borderRadius: 4 }}>{acc.name}</span>
                     </div>
