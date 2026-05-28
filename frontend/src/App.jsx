@@ -232,12 +232,15 @@ function MainApp({ onLogout }) {
 
       setConvs((p) => {
         const ex = p.find(
-          (c) => c.phone === msg.phone && c.accountId === aId
-        );
+  (c) =>
+    c.phone === msg.phone &&
+    Number(c.accountId) === Number(aId)
+);
 
         if (ex) {
           return p.map((c) =>
-            c.phone === msg.phone && c.accountId === aId
+          c.phone === msg.phone &&
+Number(c.accountId) === Number(aId)
               ? {
                   ...c,
                   lastMsg: msg.message,
