@@ -109,6 +109,29 @@ const TOKEN_TO_ACCOUNT = {
   "a5821f84-85d9-46e4-9212-c1c76e8beb58": 4, // Pet Family
 };
 
+// ── Gerenciamento de grupos ───────────────────────────────────────────────────
+function loadGroups() {
+  const cfg = loadConfig();
+  return cfg.groups || {}; // { "id@g.us": { name, enabled, accountId } }
+}
+
+function saveGroups(groups) {
+  const cfg = loadConfig();
+  cfg.groups = groups;
+  saveConfig(cfg);
+}
+
+// Endpoint: listar grupos detectados
+app.get("/api/groups", requireAuth, (_req, res) => {
+  res.json(loadGroups());
+});
+
+// Endpoint: atualizar grupos (ativar/desativar)
+app.post("/api/groups", requireAuth, (req, res) => {
+  saveGroups(req.body);
+  res.json({ ok: true });
+});
+
 // ── Webhook ───────────────────────────────────────────────────────────────────
 app.post("/api/webhook", async (req, res) => {
   try {
@@ -119,30 +142,47 @@ app.post("/api/webhook", async (req, res) => {
     const isMessage = event === "messages" || event === "message" || body.message || data.body || data.text;
 
     if (isMessage) {
-      // Extrair campos
       const rawId = data.chatid || data.phone || data.from || data.sender || data.number || "";
       const text = data.body || data.text || data.message || data.content || data.conversation || "";
       const fromMe = data.fromMe || data.fromme || data.isFromMe || false;
       const contact = data.senderName || data.pushName || data.notifyName || data.name || rawId;
 
-      // FILTRAR GRUPOS (@g.us)
-      const isGroup = rawId.includes("@g.us") || rawId.includes("-");
-      if (isGroup) {
-        return res.json({ ok: true, skipped: "grupo" });
-      }
-
       // Identificar conta pelo token
       const token = body.token || body.Token || data.token || "";
       const accountId = TOKEN_TO_ACCOUNT[token] || 1;
 
-      // Limpar telefone
-      const phone = rawId.replace("@s.whatsapp.net", "").replace("@c.us", "");
+      // É grupo?
+      const isGroup = rawId.includes("@g.us");
+
+      if (isGroup) {
+        // Registrar grupo na lista (se novo)
+        const groups = loadGroups();
+        if (!groups[rawId]) {
+          groups[rawId] = { name: contact, enabled: false, accountId, lastSeen: new Date().toISOString() };
+          saveGroups(groups);
+          console.log(`👥 Novo grupo detectado: ${contact} (desativado por padrão)`);
+        } else {
+          // Atualizar nome e lastSeen
+          groups[rawId].name = contact;
+          groups[rawId].lastSeen = new Date().toISOString();
+          saveGroups(groups);
+        }
+
+        // Se grupo NÃO está ativado, ignorar a mensagem
+        if (!groups[rawId].enabled) {
+          return res.json({ ok: true, skipped: "grupo desativado" });
+        }
+        // Grupo ativado → continua processando abaixo
+      }
+
+      const phone = rawId.replace("@s.whatsapp.net", "").replace("@c.us", "").replace("@g.us", "");
 
       if (!fromMe && text && !text.startsWith("http")) {
-        console.log(`🔔 [Conta ${accountId}] ${contact}: ${text.slice(0, 40)}`);
+        console.log(`🔔 [Conta ${accountId}]${isGroup ? " [GRUPO]" : ""} ${contact}: ${text.slice(0, 40)}`);
         const classified = await classifyMsg(contact, text);
         io.emit("new_message", {
           accountId, phone, contact, message: text,
+          isGroup,
           lane: classified.lane, reason: classified.reason,
           time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
         });
