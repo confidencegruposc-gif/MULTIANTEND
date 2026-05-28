@@ -637,10 +637,9 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_, onTicket }
         const data = await r.json();
         if (data.ok && Array.isArray(data.messages) && data.messages.length > 0) {
           const mapped = data.messages
-            .filter((m) => !m.fromMe || m.fromMe === false || typeof m.fromMe === "boolean")
             .map((m) => {
               const msgContent = typeof m.content === "object" ? m.content : {};
-              const text = m.body || m.text || msgContent.text || msgContent.caption || m.conversation || "📩";
+              const text = m.body || m.text || msgContent.text || msgContent.caption || m.conversation || "";
               const mediaUrl = m.mediaUrl || msgContent.URL || msgContent.url || "";
               const msgType = (m.messageType || m.type || "").toLowerCase();
               return {
@@ -652,7 +651,7 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_, onTicket }
                 isAudio: msgType.includes("audio") || msgType.includes("ptt"),
               };
             })
-            .filter((m) => m.text && m.text !== "📩");
+            .filter((m) => m.text || m.mediaUrl); // mostra tudo que tem texto OU mídia
 
           if (mapped.length > 0) {
             // Mescla: histórico da Uazapi + mensagens em tempo real que chegaram depois
