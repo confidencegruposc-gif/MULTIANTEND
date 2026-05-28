@@ -159,7 +159,6 @@ function MainApp({ onLogout }) {
   const [filterLane, setFilterLane] = useState("todas");
   const [openChat, setOpenChat] = useState(null);
   const [setupAcc, setSetupAcc] = useState(null);
-  const [showGroups, setShowGroups] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [tickets, setTickets] = useState([]);
   const [showTickets, setShowTickets] = useState(false);
@@ -294,16 +293,14 @@ function MainApp({ onLogout }) {
 const filteredConvs = convs.filter((c) => {
   const isGroupConv = c.isGroup || c.area === "groups";
 
-  // ESCONDE grupos da tela principal
   if (isGroupConv) return false;
 
-  if (
-    filterAccount !== "todas" &&
-    c.accountId !== filterAccount
-  ) {
-    return false;
-  }
+  if (filterAccount !== "todas" && c.accountId !== filterAccount) return false;
+  if (filterLane !== "todas" && c.lane !== filterLane) return false;
 
+  return true;
+});
+  
   if (
     filterLane !== "todas" &&
     c.lane !== filterLane
