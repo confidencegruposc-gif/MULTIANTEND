@@ -297,7 +297,10 @@ function MainApp({ onLogout }) {
     // Tela principal mostra somente conversas privadas
     if (isGroupConv) return false;
 
-    if (filterAccount !== "todas" && c.accountId !== filterAccount) return false;
+    if (
+  filterAccount !== "todas" &&
+  Number(c.accountId) !== Number(filterAccount)
+) return false;
     if (filterLane !== "todas" && c.lane !== filterLane) return false;
 
     return true;
@@ -311,14 +314,22 @@ const filteredGroups = convs.filter((c) => {
 
   if (!isGroupConv) return false;
 
-  if (filterAccount !== "todas" && c.accountId !== filterAccount) return false;
+ if (
+  filterAccount !== "todas" &&
+  Number(c.accountId) !== Number(filterAccount)
+) return false;
   if (filterLane !== "todas" && c.lane !== filterLane) return false;
 
   return true;
 });
 
   const counts = LANES.reduce((a, l) => {
-    a[l.id] = convs.filter((c) => c.lane === l.id && (filterAccount === "todas" || c.accountId === filterAccount)).length;
+    a[l.id] = convs.filter(
+  (c) =>
+    c.lane === l.id &&
+    (filterAccount === "todas" ||
+      Number(c.accountId) === Number(filterAccount))
+).length;
     return a;
   }, {});
 
