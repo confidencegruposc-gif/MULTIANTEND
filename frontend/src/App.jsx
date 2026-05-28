@@ -213,10 +213,16 @@ function MainApp({ onLogout }) {
     socket.on("connect", () => toast_("🔌 Tempo real ativo"));
     socket.on("new_message", (msg) => {
       const aId = msg.accountId || 1;
-      const newMsg = {
-        from: "contact", text: msg.message, time: msg.time,
-        mediaUrl: msg.mediaUrl, isImage: msg.isImage, isAudio: msg.isAudio, isDoc: msg.isDoc,
-      };
+     const newMsg = {
+  from: "contact",
+  text: msg.message,
+  time: msg.time,
+  mediaUrl: msg.mediaUrl,
+  isImage: msg.isImage,
+  isAudio: msg.isAudio,
+  isDoc: msg.isDoc,
+  isGroup: msg.isGroup || msg.area === "groups",
+};
       setConvs((p) => {
         const ex = p.find((c) => c.phone === msg.phone && c.accountId === aId);
         if (ex) {
