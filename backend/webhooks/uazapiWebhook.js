@@ -189,9 +189,6 @@ function registrarWebhookUazapi(app, io, deps = {}) {
   saveGroups(groups);
 }
 
-        saveGroups(groups);
-      }
-
     const classified = await classifyMsg(contact, text || displayText);
 
 console.log(
