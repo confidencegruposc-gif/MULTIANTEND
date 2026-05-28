@@ -128,9 +128,6 @@ function registrarWebhookUazapi(app, io, deps = {}) {
         data.isFromMe ||
         data.key?.fromMe
       );
-
-      if (fromMe) {
-        return res.json({ ok: true, ignored: "fromMe" });
       }
 
       const contact = pegarPrimeiroValor(
@@ -209,7 +206,9 @@ io.emit("new_message", {
         accountId,
        phone: isGroup ? rawId : phone,
         contact,
-
+  
+        fromMe,
+  
         isGroup,
         area: isGroup ? "groups" : "chats",
 
