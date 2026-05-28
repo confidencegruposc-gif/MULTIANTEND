@@ -326,7 +326,7 @@ function MainApp({ onLogout }) {
             background: "rgba(255,255,255,0.15)", color: "white", border: "none",
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
           }}>🎫 Chamados{tickets.filter(t => t.status !== "fechado").length > 0 ? ` (${tickets.filter(t => t.status !== "fechado").length})` : ""}</button>
-          <button onClick={() => setShowGroups(true)} title="Grupos" style={{
+          <button onClick={() => setModoGrupos(!modoGrupos)} title="Grupos" style={{
             background: "rgba(255,255,255,0.15)", color: "white", border: "none",
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
           }}>👥 Grupos</button>
