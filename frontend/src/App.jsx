@@ -209,50 +209,73 @@ function MainApp({ onLogout }) {
 
   // ─── WebSocket ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    const socket = io(window.location.origin, { transports: ["websocket", "polling"], reconnection: true });
+    const socket = io(window.location.origin, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+    });
+
     socket.on("connect", () => toast_("🔌 Tempo real ativo"));
+
     socket.on("new_message", (msg) => {
       const aId = msg.accountId || 1;
-     const newMsg = {
-  from: "contact",
-  text: msg.message,
-  time: msg.time,
-  mediaUrl: msg.mediaUrl,
-  isImage: msg.isImage,
-  isAudio: msg.isAudio,
-  isDoc: msg.isDoc,
-  isGroup: msg.isGroup || msg.area === "groups",
-       return [{
-  id: ++uid,
-  accountId: aId,
-  contact: msg.contact,
-  phone: msg.phone,
-  isGroup: msg.isGroup || msg.area === "groups",
-  area: msg.area || (msg.isGroup ? "groups" : "chats"),
-  lastMsg: msg.message,
-  time: msg.time,
-  unread: 1,
-  lane: msg.lane,
-  aiReason: msg.reason,
-  messages: [newMsg],
-}, ...p];
-};
+      const isGroupMsg = msg.isGroup || msg.area === "groups";
+
+      const newMsg = {
+        from: "contact",
+        text: msg.message,
+        time: msg.time,
+        mediaUrl: msg.mediaUrl,
+        isImage: msg.isImage,
+        isAudio: msg.isAudio,
+        isDoc: msg.isDoc,
+        isGroup: isGroupMsg,
+      };
+
       setConvs((p) => {
-        const ex = p.find((c) => c.phone === msg.phone && c.accountId === aId);
+        const ex = p.find(
+          (c) => c.phone === msg.phone && c.accountId === aId
+        );
+
         if (ex) {
-          return p.map((c) => (c.phone === msg.phone && c.accountId === aId) ? {
-            ...c, lastMsg: msg.message, time: msg.time, unread: c.unread + 1,
-            lane: msg.lane, aiReason: msg.reason,
-            messages: [...(c.messages || []), newMsg],
-          } : c);
+          return p.map((c) =>
+            c.phone === msg.phone && c.accountId === aId
+              ? {
+                  ...c,
+                  lastMsg: msg.message,
+                  time: msg.time,
+                  unread: (c.unread || 0) + 1,
+                  lane: msg.lane || c.lane || "espera",
+                  aiReason: msg.reason || c.aiReason || "",
+                  isGroup: isGroupMsg,
+                  area: isGroupMsg ? "groups" : "chats",
+                  messages: [...(c.messages || []), newMsg],
+                }
+              : c
+          );
         }
-        return [{
-          id: ++uid, accountId: aId, contact: msg.contact, phone: msg.phone,
-          lastMsg: msg.message, time: msg.time, unread: 1, lane: msg.lane, aiReason: msg.reason,
-          messages: [newMsg],
-        }, ...p];
+
+        return [
+          {
+            id: ++uid,
+            accountId: aId,
+            contact: msg.contact,
+            phone: msg.phone,
+
+            isGroup: isGroupMsg,
+            area: isGroupMsg ? "groups" : "chats",
+
+            lastMsg: msg.message,
+            time: msg.time,
+            unread: 1,
+            lane: msg.lane || "espera",
+            aiReason: msg.reason || "",
+            messages: [newMsg],
+          },
+          ...p,
+        ];
       });
     });
+
     return () => socket.disconnect();
   }, []);
 
@@ -332,26 +355,25 @@ function MainApp({ onLogout }) {
             background: "rgba(255,255,255,0.15)", color: "white", border: "none",
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
           }}>🎫 Chamados{tickets.filter(t => t.status !== "fechado").length > 0 ? ` (${tickets.filter(t => t.status !== "fechado").length})` : ""}</button>
-          <button onClick={() => setModoGrupos(!modoGrupos)} title="Grupos" style={{
+          <button
+            onClick={() => setModoGrupos(!modoGrupos)}
+            title={modoGrupos ? "Conversas" : "Grupos"}
+            style={{
+              background: "rgba(255,255,255,0.15)",
+              color: "white",
+              border: "none",
+              padding: "6px 10px",
+              fontSize: 12,
+              borderRadius: 6,
+              cursor: "pointer",
+            }}
+          >
+            {modoGrupos ? "💬 Conversas" : "👥 Grupos"}
+          </button>
+          <button onClick={onLogout} title="Sair" style={{
             background: "rgba(255,255,255,0.15)", color: "white", border: "none",
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
-          }}>👥 Grupos</button>
-          <button
-  onClick={() => setModoGrupos(!modoGrupos)}
-  title="Grupos"
-  style={{
-    background: "rgba(255,255,255,0.15)",
-    color: "white",
-    border: "none",
-    padding: "6px 10px",
-    fontSize: 12,
-    borderRadius: 6,
-    cursor: "pointer",
-  }}
->
-  {modoGrupos ? "💬 Conversas" : "👥 Grupos"}
-</button>
-            🚪 Sair</button>
+          }}>🚪 Sair</button>
         </div>
       </header>
 
