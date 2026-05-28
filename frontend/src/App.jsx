@@ -195,9 +195,14 @@ function MainApp({ onLogout }) {
     if (!loaded) return;
     const t = setTimeout(async () => {
       try {
+        // Salva convs com no máximo 50 mensagens cada (para não sobrecarregar o arquivo)
+        const convsParaSalvar = convs.map((c) => ({
+          ...c,
+          messages: (c.messages || []).slice(-50),
+        }));
         await api("/api/config", {
           method: "POST",
-          body: JSON.stringify({ accounts, convs, tickets }),
+          body: JSON.stringify({ accounts, convs: convsParaSalvar, tickets }),
         });
       } catch (e) {
         console.error("Erro ao salvar:", e);
@@ -614,9 +619,13 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_, onTicket }
   useEffect(() => msgsEnd.current?.scrollIntoView({ behavior: "smooth" }), [localMsgs, conv.messages]);
 
   // Atualiza msgs locais quando conv.messages muda (tempo real)
-  useEffect(() => { setLocalMsgs(conv.messages || []); }, [conv.messages]);
+  useEffect(() => {
+    if ((conv.messages || []).length > 0) {
+      setLocalMsgs(conv.messages);
+    }
+  }, [conv.messages]);
 
-  // Carrega histórico do servidor ao abrir (especialmente grupos)
+  // Carrega histórico da Uazapi ao abrir (para ter mais mensagens antigas)
   useEffect(() => {
     if (!conv.phone || !conv.accountId) return;
     (async () => {
@@ -627,15 +636,32 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_, onTicket }
         });
         const data = await r.json();
         if (data.ok && Array.isArray(data.messages) && data.messages.length > 0) {
-          const mapped = data.messages.map((m) => ({
-            from: m.fromMe ? "me" : "contact",
-            text: m.body || m.text || m.content?.text || m.content?.caption || "📩",
-            time: m.time || new Date(m.timestamp * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-            mediaUrl: m.mediaUrl || m.content?.URL || "",
-            isImage: (m.messageType || "").includes("image"),
-            isAudio: (m.messageType || "").includes("audio") || (m.messageType || "").includes("ptt"),
-          }));
-          setLocalMsgs(mapped);
+          const mapped = data.messages
+            .filter((m) => !m.fromMe || m.fromMe === false || typeof m.fromMe === "boolean")
+            .map((m) => {
+              const msgContent = typeof m.content === "object" ? m.content : {};
+              const text = m.body || m.text || msgContent.text || msgContent.caption || m.conversation || "📩";
+              const mediaUrl = m.mediaUrl || msgContent.URL || msgContent.url || "";
+              const msgType = (m.messageType || m.type || "").toLowerCase();
+              return {
+                from: m.fromMe ? "me" : "contact",
+                text,
+                time: m.time || (m.messageTimestamp ? new Date(m.messageTimestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""),
+                mediaUrl,
+                isImage: msgType.includes("image"),
+                isAudio: msgType.includes("audio") || msgType.includes("ptt"),
+              };
+            })
+            .filter((m) => m.text && m.text !== "📩");
+
+          if (mapped.length > 0) {
+            // Mescla: histórico da Uazapi + mensagens em tempo real que chegaram depois
+            setLocalMsgs((current) => {
+              const uazapiTexts = new Set(mapped.map((m) => m.text + m.time));
+              const extras = (current || []).filter((m) => !uazapiTexts.has(m.text + m.time));
+              return [...mapped, ...extras];
+            });
+          }
         }
       } catch {}
     })();
@@ -767,10 +793,10 @@ function ChatModal({ conv, accounts, onClose, onMove, onSend, toast_, onTicket }
           {(localMsgs || []).map((m, i) => (
             <div key={i} style={{ display: "flex", justifyContent: m.from === "me" ? "flex-end" : "flex-start", marginBottom: 8 }}>
               <div style={{ background: m.from === "me" ? "#dcf8c6" : "white", padding: "8px 12px", borderRadius: 8, maxWidth: "75%", fontSize: 13, boxShadow: "0 1px 1px rgba(0,0,0,0.1)" }}>
-                {m.mediaUrl && m.isImage && <img src={m.mediaUrl} alt="" style={{ maxWidth: "100%", borderRadius: 6, marginBottom: 4 }} />}
+                {m.mediaUrl && m.isImage && <img src={`/api/media?url=${encodeURIComponent(m.mediaUrl)}&accountId=${conv.accountId}`} alt="" style={{ maxWidth: "100%", borderRadius: 6, marginBottom: 4 }} onError={(e) => { e.target.style.display="none"; }} />}
                 {m.mediaUrl && m.isAudio && (
                   <div>
-                    <audio controls src={m.mediaUrl} style={{ maxWidth: 200, height: 32 }} />
+                    <audio controls src={`/api/media?url=${encodeURIComponent(m.mediaUrl)}&accountId=${conv.accountId}`} style={{ maxWidth: 200, height: 32 }} />
                     <button onClick={async () => { const t = await transcribe(m.mediaUrl); if(t) alert("Transcrição:\n\n" + t); }} style={{ display: "block", marginTop: 4, background: "#075E54", color: "white", border: "none", padding: "3px 8px", borderRadius: 4, fontSize: 10, cursor: "pointer" }}>🎤 Transcrever</button>
                   </div>
                 )}
