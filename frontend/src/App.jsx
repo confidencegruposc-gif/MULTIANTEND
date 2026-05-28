@@ -3,10 +3,10 @@ import { io } from "socket.io-client";
 
 // ─── CONTAS PADRÃO ───────────────────────────────────────────────────────────
 const DEFAULT_ACCOUNTS = [
-  { id:1, name:"confir MEI", color:"#7c3aed", colorLight:"#faf5ff", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
-  { id:2, name:"Confidence Contabilidade", color:"#0ea5e9", colorLight:"#eff6ff", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
-  { id:3, name:"Pessoal Odilei", color:"#f59e0b", colorLight:"#fffbeb", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
-  { id:4, name:"Pet Family", color:"#ec4899", colorLight:"#fdf2f8", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"", enabled:false },
+  { id:1, name:"confir MEI", color:"#7c3aed", colorLight:"#faf5ff", baseUrl:"https://scpetfamily.uazapi.com", session:"confirMEI", sessionKey:"", token:"4b246ec4-afec-46af-8c9f-39cbabcc9775", gerenciador:"", enabled:true },
+  { id:2, name:"Confidence Contabilidade", color:"#0ea5e9", colorLight:"#eff6ff", baseUrl:"https://scpetfamily.uazapi.com", session:"Confidence", sessionKey:"", token:"b611340c-989d-4975-9f97-bc937503202f", gerenciador:"", enabled:true },
+  { id:3, name:"Pessoal Odilei", color:"#f59e0b", colorLight:"#fffbeb", baseUrl:"", session:"", sessionKey:"", token:"", gerenciador:"Odilei", enabled:false },
+  { id:4, name:"Pet Family", color:"#ec4899", colorLight:"#fdf2f8", baseUrl:"https://scpetfamily.uazapi.com", session:"scpetfamily", sessionKey:"", token:"a5821f84-85d9-46e4-9212-c1c76e8beb58", gerenciador:"", enabled:true },
 ];
 
 const LANES = [
