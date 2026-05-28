@@ -6,10 +6,11 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 const socketIo = require("socket.io");
+const { registrarWebhookUazapi } = require("./webhooks/uazapiWebhook");
 
 const app = express();
 const server = http.createServer(app);
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // ── Configuração de Persistência ──────────────────────────────────────────────
 const DATA_DIR = process.env.DATA_DIR || "/data";
@@ -102,10 +103,6 @@ app.post("/api/config", requireAuth, (req, res) => {
   else res.status(500).json({ error: "Erro ao salvar" });
 });
 
-// Helper para extrair caption de mídia
-function caption_(data) {
-  return data.caption || data.text || "";
-}
 
 // ── Mapa de tokens → accountId ────────────────────────────────────────────────
 const TOKEN_TO_ACCOUNT = {
@@ -137,244 +134,13 @@ app.post("/api/groups", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// ─────────────────────────────────────────────────────────────
-// WEBHOOK UNIVERSAL UAZAPI
-// Recebe TODOS os tipos de mensagens
-// ─────────────────────────────────────────────────────────────
-app.post("/api/webhook", async (req, res) => {
-  try {
-    const body = req.body || {};
-
-    console.log("\n═══════════════════════════════");
-    console.log("📥 WEBHOOK RECEBIDO");
-    console.log(JSON.stringify(body, null, 2).slice(0, 4000));
-    console.log("═══════════════════════════════\n");
-
-    // Estrutura principal
-    const data =
-      body.data ||
-      body.message ||
-      body.messages ||
-      body.payload ||
-      body;
-
-    // Evento
-    const event =
-      body.event ||
-      body.type ||
-      body.EventType ||
-      data.event ||
-      "message";
-
-    // ID do chat
-    const rawId =
-      data.chatid ||
-      data.chatId ||
-      data.from ||
-      data.sender ||
-      data.phone ||
-      data.number ||
-      "";
-
-    // Nome do contato/grupo
-    const contact =
-      data.groupName ||
-      data.senderName ||
-      data.pushName ||
-      data.notifyName ||
-      data.name ||
-      data.chatName ||
-      rawId;
-
-    // Detecta grupo
-    const isGroup =
-      rawId.includes("@g.us") ||
-      rawId.includes("group");
-
-    // Número limpo
-    const phone = String(rawId)
-      .replace("@s.whatsapp.net", "")
-      .replace("@c.us", "")
-      .replace("@g.us", "");
-
-    // Tipo da mensagem
-    const msgType = (
-      data.messageType ||
-      data.type ||
-      data.mimetype ||
-      "text"
-    ).toLowerCase();
-
-    // Conteúdo
-    const content = data.content || {};
-
-    // Texto principal
-    const text =
-      content.text ||
-      content.caption ||
-      data.text ||
-      data.body ||
-      data.message ||
-      data.conversation ||
-      "";
-
-    // URLs de mídia
-    const mediaUrl =
-      data.mediaUrl ||
-      data.url ||
-      data.fileUrl ||
-      data.audioUrl ||
-      data.videoUrl ||
-      data.imageUrl ||
-      data.documentUrl ||
-      "";
-
-    // Detectores
-    const isAudio =
-      msgType.includes("audio") ||
-      msgType.includes("ptt") ||
-      msgType.includes("voice");
-
-    const isImage =
-      msgType.includes("image") ||
-      msgType.includes("photo");
-
-    const isVideo =
-      msgType.includes("video");
-
-    const isDoc =
-      msgType.includes("document") ||
-      msgType.includes("file");
-
-    const isSticker =
-      msgType.includes("sticker");
-
-    const isLocation =
-      msgType.includes("location");
-
-    const isContact =
-      msgType.includes("contact");
-
-    // Ignorar mensagens enviadas por você
-    const fromMe =
-      data.fromMe ||
-      data.fromme ||
-      data.isFromMe ||
-      false;
-
-    // Texto de exibição
-    let displayText = text;
-
-    if (isAudio) displayText = "🎤 [ÁUDIO]";
-    else if (isImage) displayText = text || "📷 [IMAGEM]";
-    else if (isVideo) displayText = text || "🎥 [VÍDEO]";
-    else if (isDoc) displayText = "📄 [DOCUMENTO]";
-    else if (isSticker) displayText = "😂 [STICKER]";
-    else if (isLocation) displayText = "📍 [LOCALIZAÇÃO]";
-    else if (isContact) displayText = "👤 [CONTATO]";
-
-    // TOKEN / INSTÂNCIA
-    const token =
-      body.token ||
-      body.Token ||
-      data.token ||
-      "";
-
-    const owner =
-      body.owner ||
-      body.Owner ||
-      data.owner ||
-      body.instance ||
-      body.Instance ||
-      "";
-
-    console.log("━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("📌 EVENTO:", event);
-    console.log("📌 TIPO:", msgType);
-    console.log("📌 CONTATO:", contact);
-    console.log("📌 NÚMERO:", phone);
-    console.log("📌 GRUPO:", isGroup);
-    console.log("📌 TEXTO:", displayText);
-    console.log("📌 MÍDIA:", mediaUrl || "Nenhuma");
-    console.log("━━━━━━━━━━━━━━━━━━━━━━");
-
-    // Ignora mensagens próprias
-    if (fromMe) {
-      return res.json({
-        ok: true,
-        ignored: "fromMe"
-      });
-    }
-
-    // IDENTIFICAR CONTA
-    const TOKEN_TO_ACCOUNT = {
-      "4b246ec4-afec-46af-8c9f-39cbabcc9775": 1,
-      "b611340c-989d-4975-9f97-bc937503202f": 2,
-      "a5821f84-85d9-46e4-9212-c1c76e8beb58": 4,
-    };
-
-    const OWNER_TO_ACCOUNT = {
-      "554792285773": 1,
-      "554792189753": 2,
-      "554732125603": 4,
-    };
-
-    let accountId = TOKEN_TO_ACCOUNT[token];
-
-    if (!accountId) {
-      const ownerClean = String(owner).replace(/\D/g, "");
-      accountId = OWNER_TO_ACCOUNT[ownerClean];
-    }
-
-    if (!accountId) accountId = 1;
-
-    // Emitir no frontend
-    io.emit("new_message", {
-      accountId,
-      phone,
-      contact,
-      message: displayText,
-      originalText: text,
-
-      mediaUrl,
-      msgType,
-
-      isAudio,
-      isImage,
-      isVideo,
-      isDoc,
-      isSticker,
-      isLocation,
-      isContact,
-      isGroup,
-
-      event,
-
-      time: new Date().toLocaleTimeString(
-        "pt-BR",
-        {
-          hour: "2-digit",
-          minute: "2-digit"
-        }
-      ),
-    });
-
-    return res.json({
-      ok: true,
-      received: true,
-      type: msgType
-    });
-
-  } catch (err) {
-    console.error("❌ ERRO WEBHOOK:", err);
-
-    return res.status(500).json({
-      ok: false,
-      error: err.message
-    });
-  }
+// ── Webhook UAZAPI separado ─────────────────────────────────────────────────
+registrarWebhookUazapi(app, io, {
+  TOKEN_TO_ACCOUNT,
+  loadGroups,
+  saveGroups,
+  classifyMsg,
 });
-
 
 // ── Classify ──────────────────────────────────────────────────────────────────
 async function classifyMsg(contact, message) {
@@ -395,7 +161,7 @@ async function classifyMsg(contact, message) {
     });
     const d = await r.json();
     const text = d.choices?.[0]?.message?.content || '{"lane":"espera","reason":""}';
-    return JSON.parse(text.replace(/```json|```/g, "").trim());
+    return JSON.parse(text.replace(/on|/g, "").trim());
   } catch { return { lane: "espera", reason: "erro" }; }
 }
 
