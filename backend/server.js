@@ -60,6 +60,17 @@ function saveConfig(data) {
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "5mb" }));
 
+// ── LOG TODAS AS REQUISIÇÕES (debug) ──────────────────────────────────────────
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/assets") && req.path !== "/" && !req.path.includes("favicon")) {
+    console.log(`📥 [${req.method}] ${req.path} | from: ${req.headers["user-agent"]?.slice(0,30) || "?"}`);
+    if (req.method === "POST" && req.body && Object.keys(req.body).length > 0) {
+      console.log(`   📦 Body: ${JSON.stringify(req.body).slice(0, 200)}`);
+    }
+  }
+  next();
+});
+
 // ── AUTENTICAÇÃO POR SENHA ────────────────────────────────────────────────────
 const APP_PASSWORD = process.env.APP_PASSWORD || "multiatend2026";
 
@@ -104,15 +115,46 @@ app.post("/api/config", requireAuth, (req, res) => {
 
 // ── Webhook ───────────────────────────────────────────────────────────────────
 app.post("/api/webhook", async (req, res) => {
-  const { event, data } = req.body || {};
-  if (event === "messages" && data && !data.fromMe) {
-    const classified = await classifyMsg(data.senderName || "Desconhecido", data.body || "");
-    io.emit("new_message", {
-      phone: data.phone, contact: data.senderName || "Desconhecido",
-      message: data.body, lane: classified.lane, reason: classified.reason,
-      time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-    });
+  console.log("🔔 WEBHOOK RECEBIDO!");
+  console.log("   Payload:", JSON.stringify(req.body).slice(0, 500));
+
+  try {
+    const body = req.body || {};
+    // Uazapi pode mandar em formatos diferentes
+    const event = body.event || body.type || body.EventType;
+    const data = body.data || body.message || body;
+
+    // Detectar se é mensagem
+    const isMessage = event === "messages" || event === "message" || body.message || data.body || data.text;
+
+    if (isMessage) {
+      // Extrair campos (vários formatos possíveis)
+      const phone = data.phone || data.chatid || data.from || data.sender || data.number || "desconhecido";
+      const text = data.body || data.text || data.message || data.content || data.conversation || "";
+      const fromMe = data.fromMe || data.fromme || data.isFromMe || false;
+      const contact = data.senderName || data.pushName || data.notifyName || data.name || phone;
+
+      console.log(`   📱 De: ${contact} (${phone}) | fromMe: ${fromMe}`);
+      console.log(`   💬 Texto: ${text}`);
+
+      if (!fromMe && text) {
+        const classified = await classifyMsg(contact, text);
+        io.emit("new_message", {
+          phone, contact, message: text,
+          lane: classified.lane, reason: classified.reason,
+          time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+        });
+        console.log(`   ✅ Enviado pro app: ${contact} → ${classified.lane}`);
+      } else {
+        console.log(`   ⏭️ Ignorado (fromMe=${fromMe} ou texto vazio)`);
+      }
+    } else {
+      console.log(`   ⏭️ Evento não é mensagem: ${event}`);
+    }
+  } catch (err) {
+    console.error("   ❌ Erro no webhook:", err.message);
   }
+
   res.json({ ok: true });
 });
 
