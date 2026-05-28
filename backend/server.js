@@ -102,6 +102,11 @@ app.post("/api/config", requireAuth, (req, res) => {
   else res.status(500).json({ error: "Erro ao salvar" });
 });
 
+// Helper para extrair caption de mídia
+function caption_(data) {
+  return data.caption || data.text || "";
+}
+
 // ── Mapa de tokens → accountId ────────────────────────────────────────────────
 const TOKEN_TO_ACCOUNT = {
   "4b246ec4-afec-46af-8c9f-39cbabcc9775": 1, // confir MEI
@@ -177,11 +182,25 @@ app.post("/api/webhook", async (req, res) => {
 
       const phone = rawId.replace("@s.whatsapp.net", "").replace("@c.us", "").replace("@g.us", "");
 
-      if (!fromMe && text && !text.startsWith("http")) {
-        console.log(`🔔 [Conta ${accountId}]${isGroup ? " [GRUPO]" : ""} ${contact}: ${text.slice(0, 40)}`);
-        const classified = await classifyMsg(contact, text);
+      // Detectar tipo de mídia
+      const msgType = data.messageType || data.type || "text";
+      const mediaUrl = data.mediaUrl || data.url || data.fileUrl || "";
+      const isAudio = msgType.includes("audio") || msgType.includes("ptt");
+      const isImage = msgType.includes("image");
+      const isDoc = msgType.includes("document");
+
+      let displayText = text;
+      if (isAudio) displayText = "🎤 [Áudio]";
+      else if (isImage) displayText = caption_(data) || "📷 [Imagem]";
+      else if (isDoc) displayText = "📄 [Documento]";
+
+      if (!fromMe && (text || mediaUrl)) {
+        console.log(`🔔 [Conta ${accountId}]${isGroup ? " [GRUPO]" : ""} ${contact}: ${displayText.slice(0, 40)}`);
+        const classified = await classifyMsg(contact, text || displayText);
         io.emit("new_message", {
-          accountId, phone, contact, message: text,
+          accountId, phone, contact,
+          message: displayText,
+          mediaUrl, msgType, isAudio, isImage, isDoc,
           isGroup,
           lane: classified.lane, reason: classified.reason,
           time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
@@ -225,6 +244,132 @@ app.post("/api/classify", async (req, res) => {
   const { contact, message } = req.body;
   if (!contact || !message) return res.status(400).json({ error: "Campos obrigatórios" });
   res.json(await classifyMsg(contact, message));
+});
+
+// ── ENVIAR MENSAGEM (texto, imagem, arquivo, áudio) ───────────────────────────
+const ACCOUNT_TOKENS = {
+  1: "4b246ec4-afec-46af-8c9f-39cbabcc9775",
+  2: "b611340c-989d-4975-9f97-bc937503202f",
+  4: "a5821f84-85d9-46e4-9212-c1c76e8beb58",
+};
+const UAZAPI_BASE = "https://scpetfamily.uazapi.com";
+
+app.post("/api/send", async (req, res) => {
+  const { accountId, phone, type, text, file, filename, caption } = req.body;
+  const token = ACCOUNT_TOKENS[accountId];
+  if (!token) return res.status(400).json({ error: "Conta inválida" });
+
+  const number = phone.includes("@") ? phone : `${phone}`;
+
+  try {
+    let endpoint, payload;
+
+    if (type === "text") {
+      endpoint = "/send/text";
+      payload = { number, text };
+    } else if (type === "image") {
+      endpoint = "/send/media";
+      payload = { number, type: "image", file, caption: caption || "" };
+    } else if (type === "document") {
+      endpoint = "/send/media";
+      payload = { number, type: "document", file, docName: filename || "arquivo", caption: caption || "" };
+    } else if (type === "audio") {
+      endpoint = "/send/media";
+      payload = { number, type: "audio", file };
+    } else {
+      return res.status(400).json({ error: "Tipo inválido" });
+    }
+
+    const r = await fetch(`${UAZAPI_BASE}${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    console.log(`📤 Enviado [${type}] para ${number} via conta ${accountId}`);
+    res.json({ ok: r.ok, data });
+  } catch (err) {
+    console.error("Erro ao enviar:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ── BUSCAR HISTÓRICO de uma conversa ──────────────────────────────────────────
+app.post("/api/history", async (req, res) => {
+  const { accountId, phone } = req.body;
+  const token = ACCOUNT_TOKENS[accountId];
+  if (!token) return res.status(400).json({ error: "Conta inválida" });
+
+  try {
+    const r = await fetch(`${UAZAPI_BASE}/message/find`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token },
+      body: JSON.stringify({ chatid: phone, limit: 50 }),
+    });
+    const data = await r.json();
+    res.json({ ok: true, messages: Array.isArray(data) ? data : (data.messages || []) });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ── TRANSCREVER ÁUDIO (Whisper) ───────────────────────────────────────────────
+app.post("/api/transcribe", async (req, res) => {
+  const { audioUrl } = req.body;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "OpenAI não configurada" });
+
+  try {
+    // Baixar o áudio
+    const audioResp = await fetch(audioUrl);
+    const audioBuffer = await audioResp.buffer();
+
+    // Enviar pro Whisper
+    const FormData = require("form-data");
+    const form = new FormData();
+    form.append("file", audioBuffer, { filename: "audio.ogg", contentType: "audio/ogg" });
+    form.append("model", "whisper-1");
+    form.append("language", "pt");
+
+    const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, ...form.getHeaders() },
+      body: form,
+    });
+    const data = await r.json();
+    res.json({ ok: true, text: data.text || "" });
+  } catch (err) {
+    console.error("Erro transcrição:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ── RESUMO DA CONVERSA (GPT) ──────────────────────────────────────────────────
+app.post("/api/summary", async (req, res) => {
+  const { messages } = req.body;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: "OpenAI não configurada" });
+  if (!messages || messages.length === 0) return res.json({ ok: true, summary: "Sem mensagens para resumir." });
+
+  try {
+    const conversa = messages.map((m) => `${m.from === "me" ? "Atendente" : "Cliente"}: ${m.text}`).join("\n");
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 200,
+        messages: [
+          { role: "system", content: "Resuma a conversa de atendimento de forma clara e objetiva, destacando: o que o cliente quer, status do atendimento e próximos passos. Máximo 4 linhas." },
+          { role: "user", content: conversa },
+        ],
+      }),
+    });
+    const data = await r.json();
+    res.json({ ok: true, summary: data.choices?.[0]?.message?.content || "Erro ao resumir" });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
 });
 
 // ── Proxy Uazapi ──────────────────────────────────────────────────────────────
