@@ -169,20 +169,19 @@ function registrarWebhookUazapi(app, io, deps = {}) {
       if (isGroup) {
         const groups = loadGroups();
 
-        if (!groups[rawId]) {
-          groups[rawId] = {
-            name: contact,
-            enabled: true,
-            accountId,
-            phone,
-            lastSeen: new Date().toISOString(),
-          };
+       groups[rawId] = {
+  name: contact,
+  enabled: true,
+  accountId,
+  phone: rawId,
+  lastSeen: new Date().toISOString(),
+};
 
          console.log("[GRUPO NOVO]", contact);
         } else {
           groups[rawId].name = contact;
           groups[rawId].accountId = accountId;
-          groups[rawId].phone = phone;
+          groups[rawId].phone = rawId;
           groups[rawId].lastSeen = new Date().toISOString();
         }
 
