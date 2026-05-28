@@ -159,6 +159,7 @@ function MainApp({ onLogout }) {
   const [filterLane, setFilterLane] = useState("todas");
   const [openChat, setOpenChat] = useState(null);
   const [setupAcc, setSetupAcc] = useState(null);
+  const [showGroups, setShowGroups] = useState(false);
   const [showNewChat, setShowNewChat] = useState(false);
   const [tickets, setTickets] = useState([]);
   const [showTickets, setShowTickets] = useState(false);
@@ -290,26 +291,17 @@ function MainApp({ onLogout }) {
   const moveTo = (id, lane) => setConvs((p) => p.map((c) => c.id === id ? { ...c, lane } : c));
   const markRead = (id) => setConvs((p) => p.map((c) => c.id === id ? { ...c, unread: 0 } : c));
 
-const filteredConvs = convs.filter((c) => {
-  const isGroupConv = c.isGroup || c.area === "groups";
+  const filteredConvs = convs.filter((c) => {
+    const isGroupConv = c.isGroup || c.area === "groups";
 
-  if (isGroupConv) return false;
+    // Tela principal mostra somente conversas privadas
+    if (isGroupConv) return false;
 
-  if (filterAccount !== "todas" && c.accountId !== filterAccount) return false;
-  if (filterLane !== "todas" && c.lane !== filterLane) return false;
+    if (filterAccount !== "todas" && c.accountId !== filterAccount) return false;
+    if (filterLane !== "todas" && c.lane !== filterLane) return false;
 
-  return true;
-});
-  
-  if (
-    filterLane !== "todas" &&
-    c.lane !== filterLane
-  ) {
-    return false;
-  }
-
-  return true;
-});
+    return true;
+  });
 
   const counts = LANES.reduce((a, l) => {
     a[l.id] = convs.filter((c) => c.lane === l.id && (filterAccount === "todas" || c.accountId === filterAccount)).length;
@@ -363,21 +355,20 @@ const filteredConvs = convs.filter((c) => {
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
           }}>🎫 Chamados{tickets.filter(t => t.status !== "fechado").length > 0 ? ` (${tickets.filter(t => t.status !== "fechado").length})` : ""}</button>
           <button
-<button
-  onClick={() => setShowGroups(true)}
-  title="Grupos"
-  style={{
-    background: "rgba(255,255,255,0.15)",
-    color: "white",
-    border: "none",
-    padding: "6px 10px",
-    fontSize: 12,
-    borderRadius: 6,
-    cursor: "pointer",
-  }}
->
-  👥 Grupos
-</button>
+            onClick={() => setShowGroups(true)}
+            title="Grupos"
+            style={{
+              background: "rgba(255,255,255,0.15)",
+              color: "white",
+              border: "none",
+              padding: "6px 10px",
+              fontSize: 12,
+              borderRadius: 6,
+              cursor: "pointer",
+            }}
+          >
+            👥 Grupos
+          </button>
           <button onClick={onLogout} title="Sair" style={{
             background: "rgba(255,255,255,0.15)", color: "white", border: "none",
             padding: "6px 10px", fontSize: 12, borderRadius: 6, cursor: "pointer",
