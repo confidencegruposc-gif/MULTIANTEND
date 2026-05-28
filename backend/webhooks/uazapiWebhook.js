@@ -112,7 +112,8 @@ function registrarWebhookUazapi(app, io, deps = {}) {
   data.imageUrl,
   data.videoUrl,
 
-  content?.url,
+ content?.URL,
+content?.url,
   content?.mediaUrl,
   content?.fileUrl,
   content?.imageUrl,
