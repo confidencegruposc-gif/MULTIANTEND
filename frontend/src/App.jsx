@@ -216,7 +216,7 @@ function MainApp({ onLogout }) {
     socket.on("connect", () => toast_("🔌 Tempo real ativo"));
 
     socket.on("new_message", (msg) => {
-      const aId = msg.accountId || 1;
+      const aId = Number(msg.accountId || 1);
       const isGroupMsg = msg.isGroup || msg.area === "groups";
 
       const newMsg = {
