@@ -170,30 +170,34 @@ function registrarWebhookUazapi(app, io, deps = {}) {
         `🔔 [Conta ${accountId}] ${isGroup ? "[GRUPO]" : "[CLIENTE]"} ${contact}: ${displayText}`
       );
 
-      io.emit("new_message", {
-        accountId,
-        phone,
-        contact,
-        message: displayText,
-        originalText: text,
-        mediaUrl,
-        msgType: tipos.msgType,
-        isAudio: tipos.isAudio,
-        isImage: tipos.isImage,
-        isVideo: tipos.isVideo,
-        isDoc: tipos.isDoc,
-        isSticker: tipos.isSticker,
-        isLocation: tipos.isLocation,
-        isContact: tipos.isContact,
-        isGroup,
-        groupEnabled,
-        lane: classified.lane,
-        reason: classified.reason,
-        time: new Date().toLocaleTimeString("pt-BR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      });
+     io.emit("new_message", {
+  accountId,
+  phone,
+  contact,
+
+  // IMPORTANTE
+  isGroup,
+  area: isGroup ? "groups" : "chats",
+
+  message: displayText,
+  originalText: text,
+
+  mediaUrl,
+  msgType,
+
+  isAudio,
+  isImage,
+  isVideo,
+  isDoc,
+  isSticker,
+  isLocation,
+  isContact,
+
+  time: new Date().toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }),
+});
 
       return res.json({
         ok: true,
