@@ -9,10 +9,77 @@ const socketIo = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
+// ── Configuração de Persistência ──────────────────────────────────────────────
+const DATA_DIR = process.env.DATA_DIR || "/data";
+const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+
+// Criar diretório se não existir
+if (!fs.existsSync(DATA_DIR)) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    console.log(`✅ Diretório criado: ${DATA_DIR}`);
+  } catch (e) {
+    console.warn(`⚠️ Não foi possível criar ${DATA_DIR}, usando fallback`);
+  }
+}
+
+// Fallback se /data não existir
+const FALLBACK_DIR = path.join(__dirname, "data");
+if (!fs.existsSync(DATA_DIR)) {
+  if (!fs.existsSync(FALLBACK_DIR)) fs.mkdirSync(FALLBACK_DIR, { recursive: true });
+}
+
+const ACTUAL_CONFIG_FILE = fs.existsSync(DATA_DIR) ? CONFIG_FILE : path.join(FALLBACK_DIR, "config.json");
+console.log(`📁 Arquivo de config: ${ACTUAL_CONFIG_FILE}`);
+
+// ── Funções de leitura/escrita ────────────────────────────────────────────────
+function loadConfig() {
+  try {
+    if (fs.existsSync(ACTUAL_CONFIG_FILE)) {
+      return JSON.parse(fs.readFileSync(ACTUAL_CONFIG_FILE, "utf-8"));
+    }
+  } catch (e) {
+    console.error("Erro ao ler config:", e.message);
+  }
+  return { accounts: [], convs: [] };
+}
+
+function saveConfig(data) {
+  try {
+    fs.writeFileSync(ACTUAL_CONFIG_FILE, JSON.stringify(data, null, 2));
+    return true;
+  } catch (e) {
+    console.error("Erro ao salvar config:", e.message);
+    return false;
+  }
+}
+
+// ── CORS e Body Parser ────────────────────────────────────────────────────────
 app.use(cors({ origin: "*" }));
 app.use(express.json({ limit: "5mb" }));
+
+// ── AUTENTICAÇÃO POR SENHA ────────────────────────────────────────────────────
+const APP_PASSWORD = process.env.APP_PASSWORD || "multiatend2026";
+
+// Middleware de autenticação
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization || req.query.token;
+  if (auth === APP_PASSWORD || auth === `Bearer ${APP_PASSWORD}`) {
+    return next();
+  }
+  return res.status(401).json({ error: "Não autorizado", needsAuth: true });
+}
+
+// Endpoint de login
+app.post("/api/login", (req, res) => {
+  const { password } = req.body || {};
+  if (password === APP_PASSWORD) {
+    return res.json({ ok: true, token: APP_PASSWORD });
+  }
+  return res.status(401).json({ error: "Senha incorreta" });
+});
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 const io = socketIo(server, { cors: { origin: "*" } });
@@ -22,7 +89,18 @@ io.on("connection", (socket) => {
 });
 
 // ── Health ────────────────────────────────────────────────────────────────────
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, configFile: ACTUAL_CONFIG_FILE }));
+
+// ── CONFIG: GET e POST ────────────────────────────────────────────────────────
+app.get("/api/config", requireAuth, (_req, res) => {
+  res.json(loadConfig());
+});
+
+app.post("/api/config", requireAuth, (req, res) => {
+  const ok = saveConfig(req.body);
+  if (ok) res.json({ ok: true });
+  else res.status(500).json({ error: "Erro ao salvar" });
+});
 
 // ── Webhook ───────────────────────────────────────────────────────────────────
 app.post("/api/webhook", async (req, res) => {
@@ -63,7 +141,7 @@ async function classifyMsg(contact, message) {
 
 app.post("/api/classify", async (req, res) => {
   const { contact, message } = req.body;
-  if (!contact || !message) return res.status(400).json({ error: "Campos obrigatórios: contact, message" });
+  if (!contact || !message) return res.status(400).json({ error: "Campos obrigatórios" });
   res.json(await classifyMsg(contact, message));
 });
 
@@ -99,11 +177,10 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-// ── Start — ESCUTAR EM 0.0.0.0 ────────────────────────────────────────────────
+// ── Start ─────────────────────────────────────────────────────────────────────
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`\n✅ MultiAtend rodando em http://0.0.0.0:${PORT}`);
-  console.log(`   📡 WebSocket (socket.io)`);
-  console.log(`   🔔 Webhook: POST /api/webhook`);
-  console.log(`   💬 Classify: POST /api/classify`);
-  console.log(`   🔗 Proxy: /api/uazapi/*\n`);
+  console.log(`   🔒 Senha: ${APP_PASSWORD === "multiatend2026" ? "PADRÃO (mude!)" : "CUSTOMIZADA ✓"}`);
+  console.log(`   📁 Config: ${ACTUAL_CONFIG_FILE}`);
+  console.log(`   📡 WebSocket | 🔔 Webhook | 💬 Classify | 🔗 Proxy Uazapi\n`);
 });
