@@ -1,6 +1,6 @@
+```js
 // backend/webhooks/uazapiWebhook.js
 // Webhook universal da UAZAPI
-// Recebe texto, imagem, áudio, documento, vídeo, sticker, localização e contato.
 
 function pegarPrimeiroValor(...valores) {
   for (const valor of valores) {
@@ -57,16 +57,29 @@ function registrarWebhookUazapi(app, io, deps = {}) {
   } = deps;
 
   const OWNER_TO_ACCOUNT = {
-    "554792285773": 1, // confir MEI
-    "554792189753": 2, // Confidence
-    "554732125603": 4, // Pet Family
+    "554792285773": 1,
+    "554792189753": 2,
+    "554732125603": 4,
   };
 
   async function receberWebhook(req, res) {
     try {
       const body = req.body || {};
-      const data = body.data || body.message || body.messages || body.payload || body;
-      const content = data.content || {};
+
+      // Ignora eventos que NÃO são mensagens reais
+      if (
+        body.EventType === "messages_update" ||
+        body.type === "ReadReceipt" ||
+        body.type === "DeletedMessage" ||
+        body.state === "Read" ||
+        body.state === "Delivered" ||
+        body.state === "Played"
+      ) {
+        return res.json({ ok: true, ignored: "status_update" });
+      }
+
+      const data = body.message || body.data || body.payload || body;
+      const content = typeof data.content === "object" ? data.content : {};
 
       console.log("📥 WEBHOOK RECEBIDO:", JSON.stringify(body).slice(0, 3000));
 
@@ -87,6 +100,7 @@ function registrarWebhookUazapi(app, io, deps = {}) {
         data.caption,
         data.body,
         data.text,
+        typeof data.content === "string" ? data.content : "",
         data.message,
         data.conversation,
         data.extendedTextMessage?.text
@@ -124,14 +138,25 @@ function registrarWebhookUazapi(app, io, deps = {}) {
         rawId
       );
 
-      const isGroup = String(rawId).includes("@g.us");
+      const isGroup = Boolean(
+        data.isGroup ||
+        data.IsGroup ||
+        String(rawId).includes("@g.us")
+      );
+
       const phone = limparTelefone(rawId);
 
       const tipos = detectarTipoMensagem(data);
       const displayText = montarTextoExibicao({ text, ...tipos });
 
       const token = pegarPrimeiroValor(body.token, body.Token, data.token);
-      const owner = pegarPrimeiroValor(body.owner, body.Owner, data.owner, body.instance, body.Instance);
+      const owner = pegarPrimeiroValor(
+        body.owner,
+        body.Owner,
+        data.owner,
+        body.instance,
+        body.Instance
+      );
 
       let accountId = TOKEN_TO_ACCOUNT[token];
 
@@ -142,8 +167,6 @@ function registrarWebhookUazapi(app, io, deps = {}) {
 
       if (!accountId) accountId = 1;
 
-      let groupEnabled = true;
-
       if (isGroup) {
         const groups = loadGroups();
 
@@ -152,13 +175,16 @@ function registrarWebhookUazapi(app, io, deps = {}) {
             name: contact,
             enabled: true,
             accountId,
+            phone,
             lastSeen: new Date().toISOString(),
           };
+
           console.log(`👥 Novo grupo detectado: ${contact}`);
         } else {
           groups[rawId].name = contact;
+          groups[rawId].accountId = accountId;
+          groups[rawId].phone = phone;
           groups[rawId].lastSeen = new Date().toISOString();
-          groupEnabled = groups[rawId].enabled !== false;
         }
 
         saveGroups(groups);
@@ -170,34 +196,36 @@ function registrarWebhookUazapi(app, io, deps = {}) {
         `🔔 [Conta ${accountId}] ${isGroup ? "[GRUPO]" : "[CLIENTE]"} ${contact}: ${displayText}`
       );
 
-     io.emit("new_message", {
-  accountId,
-  phone,
-  contact,
+      io.emit("new_message", {
+        accountId,
+        phone,
+        contact,
 
-  // IMPORTANTE
-  isGroup,
-  area: isGroup ? "groups" : "chats",
+        isGroup,
+        area: isGroup ? "groups" : "chats",
 
-  message: displayText,
-  originalText: text,
+        message: displayText,
+        originalText: text,
 
-  mediaUrl,
-  msgType,
+        mediaUrl,
+        msgType: tipos.msgType,
 
-  isAudio,
-  isImage,
-  isVideo,
-  isDoc,
-  isSticker,
-  isLocation,
-  isContact,
+        isAudio: tipos.isAudio,
+        isImage: tipos.isImage,
+        isVideo: tipos.isVideo,
+        isDoc: tipos.isDoc,
+        isSticker: tipos.isSticker,
+        isLocation: tipos.isLocation,
+        isContact: tipos.isContact,
 
-  time: new Date().toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }),
-});
+        lane: classified.lane,
+        reason: classified.reason,
+
+        time: new Date().toLocaleTimeString("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      });
 
       return res.json({
         ok: true,
@@ -222,3 +250,4 @@ function registrarWebhookUazapi(app, io, deps = {}) {
 }
 
 module.exports = { registrarWebhookUazapi };
+```
