@@ -839,161 +839,115 @@ function Field({ label, value, onChange, placeholder }) {
 }
 
 // ─── MODAL DE GRUPOS ─────────────────────────────────────────────────────────
-function GroupsModal({ accounts, onClose, toast_, groupsFromConvs = [], onOpenGroup }) {
-  const [groups, setGroups] = useState({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await api("/api/groups");
-        if (r.ok) setGroups(await r.json());
-      } catch {}
-      setLoading(false);
-    })();
-  }, []);
-
-  async function toggleGroup(id) {
-    const updated = { ...groups, [id]: { ...groups[id], enabled: !groups[id].enabled } };
-    setGroups(updated);
-    try {
-      await api("/api/groups", { method: "POST", body: JSON.stringify(updated) });
-      toast_(updated[id].enabled ? "✅ Grupo ativado" : "🔕 Grupo desativado");
-    } catch {
-      toast_("❌ Erro ao salvar");
-    }
-  }
-
- const groupList = groupsFromConvs.length
-  ? groupsFromConvs
-  : Object.entries(groups).map(([id, g]) => ({
-      id,
-      phone: g.phone || id,
-      contact: g.name || id,
-      accountId: g.accountId,
-      lastMsg: "Grupo detectado",
-      time: g.lastSeen || "",
-      isGroup: true,
-      area: "groups",
-      messages: [],
-    }));
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", width: "90%", maxWidth: 550, borderRadius: 12, overflow: "hidden", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
-        <div style={{ background: "#075E54", color: "white", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 16 }}>👥 Gerenciar Grupos</div>
-            <div style={{ fontSize: 12, opacity: 0.85 }}>Escolha quais grupos quer receber</div>
-          </div>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "white", fontSize: 20, cursor: "pointer" }}>✕</button>
-        </div>
-
-        <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
-          <div style={{ background: "#e3f2fd", padding: 12, borderRadius: 8, fontSize: 12, color: "#1565c0", marginBottom: 16 }}>
-            💡 Os grupos aparecem aqui automaticamente quando recebem mensagens. Ative ✅ os que você quer acompanhar no app.
-          </div>
-
-          {loading ? (
-            <div style={{ textAlign: "center", padding: 40, color: "#888" }}>⏳ Carregando grupos...</div>
-          ) : groupList.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 40, color: "#888" }}>
-              📭 Nenhum grupo detectado ainda<br />
-              <span style={{ fontSize: 12 }}>Quando um grupo receber mensagem, ele aparecerá aqui</span>
-            </div>
-          ) : (
-        gruposPorConta.map(({ acc, grupos }) => (
-  <div key={acc.id}>
-    <div style={{ fontWeight: 700, color: acc.color, margin: "14px 0 8px" }}>
-      {acc.name} ({grupos.length})
-    </div>
-
-    {grupos.map((g) => {
-      const id = g.id || g.phone;
-
-      return (
-<div
-  key={id}
-  onClick={() => onOpenGroup?.(g)}
-  style={{
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: "12px",
-    borderBottom: "1px solid #f0f0f0",
-    background: g.enabled ? "#f1f8e9" : "white",
-    cursor: "pointer",
-  }}
->
-          {/* conteúdo atual do card */}
-        </div>
-      );
-    })}
+{groupList.length === 0 ? (
+  <div style={{ textAlign: "center", padding: 40, color: "#888" }}>
+    📭 Nenhum grupo detectado ainda<br />
+    <span style={{ fontSize: 12 }}>
+      Quando um grupo receber mensagem, ele aparecerá aqui
+    </span>
   </div>
-))
-  const id = g.id || g.phone;
-  const acc = accounts.find((a) => a.id === g.accountId) || accounts[0];
-              return (
-              <div
-  key={id}
-  onClick={() => onOpenGroup?.(g)}
-  style={{
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    padding: "12px",
-    borderBottom: "1px solid #f0f0f0",
-    background: g.enabled ? "#f1f8e9" : "white",
-    cursor: "pointer",
-  }}
->
-                  <div style={{
-                    width: 40, height: 40, borderRadius: "50%",
-                    background: acc.color, color: "white",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 18, flexShrink: 0,
-                  }}>👥</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>
-  {g.name || g.contact}
-</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>
-                      <span style={{ background: acc.color, color: "white", padding: "1px 6px", borderRadius: 4 }}>{acc.name}</span>
-                    </div>
-                  </div>
-                  <label style={{ position: "relative", display: "inline-block", width: 48, height: 26, cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={g.enabled}
-                      onChange={() => toggleGroup(id)}
-                      style={{ opacity: 0, width: 0, height: 0 }}
-                    />
-                    <span style={{
-                      position: "absolute", inset: 0,
-                      background: g.enabled ? "#25D366" : "#ccc",
-                      borderRadius: 26, transition: "0.3s",
-                    }}>
-                      <span style={{
-                        position: "absolute", height: 20, width: 20,
-                        left: g.enabled ? 24 : 4, bottom: 3,
-                        background: "white", borderRadius: "50%", transition: "0.3s",
-                      }}></span>
-                    </span>
-                  </label>
-                </div>
-              );
-            })
-          )}
+) : (
+  groupList.map((g) => {
+    const id = g.id || g.phone;
+    const acc =
+      accounts.find((a) => a.id === g.accountId) || accounts[0];
+
+    return (
+      <div
+        key={id}
+        onClick={() => onOpenGroup?.(g)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px",
+          borderBottom: "1px solid #f0f0f0",
+          background: g.enabled ? "#f1f8e9" : "white",
+          cursor: "pointer",
+        }}
+      >
+        <div
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            background: acc.color,
+            color: "white",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 18,
+            flexShrink: 0,
+          }}
+        >
+          👥
         </div>
 
-        <div style={{ padding: 16, borderTop: "1px solid #eee", textAlign: "center" }}>
-          <button onClick={onClose} style={{ background: "#25D366", color: "white", border: "none", padding: "10px 24px", borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Pronto</button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>
+            {g.name || g.contact}
+          </div>
+
+          <div style={{ fontSize: 11, color: "#888" }}>
+            <span
+              style={{
+                background: acc.color,
+                color: "white",
+                padding: "1px 6px",
+                borderRadius: 4,
+              }}
+            >
+              {acc.name}
+            </span>
+          </div>
         </div>
+
+        <label
+          style={{
+            position: "relative",
+            display: "inline-block",
+            width: 48,
+            height: 26,
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={g.enabled}
+            onChange={(e) => {
+              e.stopPropagation();
+              toggleGroup(id);
+            }}
+            style={{ opacity: 0, width: 0, height: 0 }}
+          />
+
+          <span
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: g.enabled ? "#25D366" : "#ccc",
+              borderRadius: 26,
+              transition: "0.3s",
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                height: 20,
+                width: 20,
+                left: g.enabled ? 24 : 4,
+                bottom: 3,
+                background: "white",
+                borderRadius: "50%",
+                transition: "0.3s",
+              }}
+            />
+          </span>
+        </label>
       </div>
-    </div>
-  );
-}
-
+    );
+  })
+)}
 // ─── MODAL NOVA CONVERSA ─────────────────────────────────────────────────────
 function NewChatModal({ accounts, onClose, toast_, onStarted }) {
   const [accountId, setAccountId] = useState(accounts.find(a => a.enabled)?.id || 1);
