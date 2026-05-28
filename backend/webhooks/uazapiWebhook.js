@@ -175,21 +175,43 @@ function registrarWebhookUazapi(app, io, deps = {}) {
   if (!groups[rawId]) {
     groups[rawId] = {
       name: contact,
-      enabled: true,
+      enabled: false,
       accountId,
       phone: rawId,
+      lastMsg: displayText,
+      lastMsgTime: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
       lastSeen: new Date().toISOString(),
     };
 
-    console.log("[GRUPO NOVO]", contact);
+    console.log("[GRUPO NOVO - desativado]", contact);
   } else {
     groups[rawId].name = contact;
     groups[rawId].accountId = accountId;
     groups[rawId].phone = rawId;
+    groups[rawId].lastMsg = displayText;
+    groups[rawId].lastMsgTime = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     groups[rawId].lastSeen = new Date().toISOString();
   }
 
   saveGroups(groups);
+
+  // Sempre emite para a aba de GRUPOS (preview do que está rolando)
+  io.emit("group_message", {
+    accountId,
+    groupId: rawId,
+    name: contact,
+    message: displayText,
+    originalText: text,
+    mediaUrl,
+    msgType: tipos.msgType,
+    enabled: groups[rawId].enabled,
+    time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+  });
+
+  // Se o grupo NÃO está ativado, não joga no feed de atendimento (kanban/lista)
+  if (!groups[rawId].enabled) {
+    return res.json({ ok: true, group: "preview_only" });
+  }
 }
 
     const classified = await classifyMsg(contact, text || displayText);
