@@ -902,8 +902,9 @@ function GroupsModal({ accounts, onClose, toast_, groupsFromConvs = [], onOpenGr
               <span style={{ fontSize: 12 }}>Quando um grupo receber mensagem, ele aparecerá aqui</span>
             </div>
           ) : (
-            groupList.map(([id, g]) => {
-              const acc = accounts.find((a) => a.id === g.accountId) || accounts[0];
+         groupList.map((g) => {
+  const id = g.id || g.phone;
+  const acc = accounts.find((a) => a.id === g.accountId) || accounts[0];
               return (
                 <div key={id} style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "12px",
