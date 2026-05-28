@@ -498,10 +498,70 @@ function ListaView({ convs, accounts, onOpen }) {
           }} onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")} onMouseLeave={(e) => (e.currentTarget.style.background = "white")}>
             <div style={{ width: 44, height: 44, borderRadius: "50%", background: acc.color, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: 14, flexShrink: 0 }}>{getInitials(conv.contact)}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: "#111" }}>{conv.contact}</div>
-                <div style={{ fontSize: 11, color: conv.unread > 0 ? lane.color : "#888", fontWeight: conv.unread > 0 ? 600 : 400 }}>{conv.time}</div>
-              </div>
+             <div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    width: "100%",
+    gap: 10,
+  }}
+>
+  <div
+    style={{
+      fontWeight: 600,
+      fontSize: 14,
+      color: "#111",
+      flex: 1,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    }}
+  >
+    {conv.contact}
+  </div>
+
+  <div
+    style={{
+      minWidth: 52,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    }}
+  >
+    <div
+      style={{
+        fontSize: 11,
+        color: conv.unread > 0 ? lane.color : "#888",
+        fontWeight: conv.unread > 0 ? 600 : 400,
+        lineHeight: 1,
+      }}
+    >
+      {conv.time}
+    </div>
+
+    {conv.unread > 0 && (
+      <div
+        style={{
+          background: "#22c55e",
+          color: "#fff",
+          width: 20,
+          height: 20,
+          borderRadius: "50%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 11,
+          fontWeight: 700,
+        }}
+      >
+        {conv.unread}
+      </div>
+    )}
+  </div>
+</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
                 <div style={{ fontSize: 12, color: "#666", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{conv.lastMsg}</div>
                 {conv.unread > 0 && <div style={{ background: "#25D366", color: "white", borderRadius: "50%", width: 20, height: 20, fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>{conv.unread}</div>}
