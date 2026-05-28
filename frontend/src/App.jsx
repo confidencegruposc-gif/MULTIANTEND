@@ -222,6 +222,20 @@ function MainApp({ onLogout }) {
   isAudio: msg.isAudio,
   isDoc: msg.isDoc,
   isGroup: msg.isGroup || msg.area === "groups",
+       return [{
+  id: ++uid,
+  accountId: aId,
+  contact: msg.contact,
+  phone: msg.phone,
+  isGroup: msg.isGroup || msg.area === "groups",
+  area: msg.area || (msg.isGroup ? "groups" : "chats"),
+  lastMsg: msg.message,
+  time: msg.time,
+  unread: 1,
+  lane: msg.lane,
+  aiReason: msg.reason,
+  messages: [newMsg],
+}, ...p];
 };
       setConvs((p) => {
         const ex = p.find((c) => c.phone === msg.phone && c.accountId === aId);
