@@ -61,6 +61,16 @@ function registrarWebhookUazapi(app, io, deps = {}) {
     "554732125603": 4,
   };
 
+  // Cache anti-duplicata: guarda IDs recentes por 30 segundos
+  const msgCache = new Map();
+  function isDuplicate(msgId) {
+    if (!msgId) return false;
+    if (msgCache.has(msgId)) return true;
+    msgCache.set(msgId, true);
+    setTimeout(() => msgCache.delete(msgId), 30000);
+    return false;
+  }
+
   async function receberWebhook(req, res) {
     try {
       const body = req.body || {};
@@ -80,7 +90,11 @@ function registrarWebhookUazapi(app, io, deps = {}) {
       const data = body.message || body.data || body.payload || body;
       const content = typeof data.content === "object" ? data.content : {};
 
-      console.log("WEBHOOK RECEBIDO:", JSON.stringify(body).slice(0, 3000));
+      // Anti-duplicata: ignora se já processamos esse ID
+      const msgId = data.messageid || data.id || data.msgId || "";
+      if (isDuplicate(msgId)) {
+        return res.json({ ok: true, ignored: "duplicate" });
+      }
 
       const rawId = pegarPrimeiroValor(
         data.chatid,
@@ -215,6 +229,16 @@ function registrarWebhookUazapi(app, io, deps = {}) {
 }
 
     const classified = await classifyMsg(contact, text || displayText);
+
+    // Ignorar mensagens enviadas por nós mesmos (exceto se quisermos monitorar)
+    if (fromMe) {
+      return res.json({ ok: true, ignored: "fromMe" });
+    }
+
+    // Ignorar se não tem conteúdo e não é mídia
+    if (!text && !mediaUrl) {
+      return res.json({ ok: true, ignored: "empty" });
+    }
 
 console.log(
   "[CONTA]",
