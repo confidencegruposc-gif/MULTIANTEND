@@ -179,6 +179,32 @@ const ACCOUNT_TOKENS = {
 };
 const UAZAPI_BASE = "https://scpetfamily.uazapi.com";
 
+// ── PROXY DE MÍDIA (imagens/áudios do WhatsApp via mmg.whatsapp.net) ──────────
+app.get("/api/media", async (req, res) => {
+  const { url, accountId } = req.query;
+  if (!url) return res.status(400).send("URL obrigatória");
+
+  try {
+    const token = ACCOUNT_TOKENS[accountId] || ACCOUNT_TOKENS[1];
+    const r = await fetch(decodeURIComponent(url), {
+      headers: {
+        "User-Agent": "WhatsApp/2.24.6.77 A",
+        token,
+      },
+    });
+
+    if (!r.ok) return res.status(r.status).send("Erro ao baixar mídia");
+
+    const contentType = r.headers.get("content-type") || "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    r.body.pipe(res);
+  } catch (err) {
+    console.error("Erro proxy mídia:", err.message);
+    res.status(502).send("Erro ao carregar mídia");
+  }
+});
+
 app.post("/api/send", async (req, res) => {
   const { accountId, phone, type, text, file, filename, caption } = req.body;
   const token = ACCOUNT_TOKENS[accountId];
