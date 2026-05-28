@@ -216,30 +216,37 @@ function MainApp({ onLogout }) {
     socket.on("connect", () => toast_("🔌 Tempo real ativo"));
 
     socket.on("new_message", (msg) => {
-      const aId = Number(msg.accountId || 1);
-      const isGroupMsg = msg.isGroup || msg.area === "groups";
+  const aId = Number(msg.accountId || 1);
 
-      const newMsg = {
-        from: msg.fromMe ? "me" : "contact",
-        text: msg.message,
-        time: msg.time,
-        mediaUrl: msg.mediaUrl,
-        isImage: msg.isImage,
-        isAudio: msg.isAudio,
-        isDoc: msg.isDoc,
-        isGroup: isGroupMsg,
-      };
+  const cleanPhone = String(cleanPhone || "")
+    .replace("@s.whatsapp.net", "")
+    .replace("@c.us", "")
+    .replace("@g.us", "");
+
+  const isGroupMsg =
+    msg.isGroup || msg.area === "groups";
+
+  const newMsg = {
+    from: msg.fromMe ? "me" : "contact",
+    text: msg.message,
+    time: msg.time,
+    mediaUrl: msg.mediaUrl,
+    isImage: msg.isImage,
+    isAudio: msg.isAudio,
+    isDoc: msg.isDoc,
+    isGroup: isGroupMsg,
+  };
 
       setConvs((p) => {
         const ex = p.find(
   (c) =>
-    c.phone === msg.phone &&
+    c.phone === cleanPhone &&
     Number(c.accountId) === Number(aId)
 );
 
         if (ex) {
           return p.map((c) =>
-          c.phone === msg.phone &&
+          c.phone === cleanPhone &&
 Number(c.accountId) === Number(aId)
               ? {
                   ...c,
@@ -261,7 +268,7 @@ Number(c.accountId) === Number(aId)
             id: ++uid,
             accountId: aId,
             contact: msg.contact,
-            phone: msg.phone,
+            phone: cleanPhone,
 
             isGroup: isGroupMsg,
             area: isGroupMsg ? "groups" : "chats",
