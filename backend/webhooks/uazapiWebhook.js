@@ -226,20 +226,16 @@ console.log(
 
 io.emit("new_message", {
         accountId,
-       phone: isGroup ? rawId : phone,
+        phone: isGroup ? rawId : phone,
         contact,
-  
         fromMe,
-  
         isGroup,
+        enabledInAtendimento: true, // só chega aqui se grupo está ativado
         area: isGroup ? "groups" : "chats",
-
         message: displayText,
         originalText: text,
-
         mediaUrl,
         msgType: tipos.msgType,
-
         isAudio: tipos.isAudio,
         isImage: tipos.isImage,
         isVideo: tipos.isVideo,
@@ -247,10 +243,8 @@ io.emit("new_message", {
         isSticker: tipos.isSticker,
         isLocation: tipos.isLocation,
         isContact: tipos.isContact,
-
         lane: classified.lane,
         reason: classified.reason,
-
         time: new Date().toLocaleTimeString("pt-BR", {
           hour: "2-digit",
           minute: "2-digit",
