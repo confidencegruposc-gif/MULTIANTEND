@@ -220,7 +220,7 @@ function MainApp({ onLogout }) {
       const isGroupMsg = msg.isGroup || msg.area === "groups";
 
       const newMsg = {
-        from: "contact",
+        from: msg.fromMe ? "me" : "contact",
         text: msg.message,
         time: msg.time,
         mediaUrl: msg.mediaUrl,
