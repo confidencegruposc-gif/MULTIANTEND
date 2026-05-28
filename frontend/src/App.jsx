@@ -875,7 +875,9 @@ function GroupsModal({
   }
 
   return (
-{groupList.length === 0 ? (
+return (
+  <div style={{ padding: 16 }}>
+    {groupList.length === 0 ? (
   <div style={{ textAlign: "center", padding: 40, color: "#888" }}>
     📭 Nenhum grupo detectado ainda<br />
     <span style={{ fontSize: 12 }}>
@@ -984,7 +986,8 @@ function GroupsModal({
     );
   })
 )}
-  );
+  </div>
+);
 }
 // ─── MODAL NOVA CONVERSA ─────────────────────────────────────────────────────
 function NewChatModal({ accounts, onClose, toast_, onStarted }) {
