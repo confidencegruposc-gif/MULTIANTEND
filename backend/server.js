@@ -152,9 +152,27 @@ app.post("/api/webhook", async (req, res) => {
       const fromMe = data.fromMe || data.fromme || data.isFromMe || false;
       const contact = data.senderName || data.pushName || data.notifyName || data.name || rawId;
 
-      // Identificar conta pelo token
+      // Identificar conta - tenta vários campos
       const token = body.token || body.Token || data.token || "";
-      const accountId = TOKEN_TO_ACCOUNT[token] || 1;
+      const owner = body.owner || body.Owner || data.owner || body.instance || body.Instance || "";
+
+      // Log para debug de identificação
+      console.log(`🔍 ID fields → token:"${token.slice(0,12)}" owner:"${owner}" base:"${body.BaseUrl || ""}"`);
+
+      // Mapa por número dono (owner) → accountId
+      const OWNER_TO_ACCOUNT = {
+        "554792285773": 1, // confir MEI
+        "554792189753": 2, // Confidence
+        "554732125603": 4, // Pet Family
+      };
+
+      // Tenta identificar por token, depois por owner
+      let accountId = TOKEN_TO_ACCOUNT[token];
+      if (!accountId) {
+        const ownerClean = owner.replace(/\D/g, "");
+        accountId = OWNER_TO_ACCOUNT[ownerClean];
+      }
+      if (!accountId) accountId = 1; // fallback
 
       // É grupo?
       const isGroup = rawId.includes("@g.us");
