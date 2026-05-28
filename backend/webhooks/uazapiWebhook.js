@@ -105,16 +105,22 @@ function registrarWebhookUazapi(app, io, deps = {}) {
         data.extendedTextMessage?.text
       );
 
-      const mediaUrl = pegarPrimeiroValor(
-        data.mediaUrl,
-        data.url,
-        data.fileUrl,
-        data.audioUrl,
-        data.imageUrl,
-        data.videoUrl,
-        data.documentUrl,
-        data.link
-      );
+     const mediaUrl = pegarPrimeiroValor(
+  data.mediaUrl,
+  data.url,
+  data.fileUrl,
+  data.imageUrl,
+  data.videoUrl,
+
+  content?.url,
+  content?.mediaUrl,
+  content?.fileUrl,
+  content?.imageUrl,
+
+  data?.message?.imageMessage?.url,
+  data?.message?.videoMessage?.url,
+  data?.message?.documentMessage?.url
+);
 
       const fromMe = Boolean(
         data.fromMe ||
