@@ -137,7 +137,6 @@ app.post("/api/groups", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-```js
 // ─────────────────────────────────────────────────────────────
 // WEBHOOK UNIVERSAL UAZAPI
 // Recebe TODOS os tipos de mensagens
